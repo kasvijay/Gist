@@ -4,18 +4,18 @@
 
 ### Critical
 
-- [ ] **RecordingManager double-start race condition** — `RecordingManager.swift:30`
+- [x] **RecordingManager double-start race condition** — `RecordingManager.swift:30`
   Set `isStarting = true` synchronously before the async Task. Two rapid `startRecording()` calls currently both pass the guard, creating two concurrent pipelines and corrupting audio.
 
-- [ ] **SessionStore main-thread I/O blocking** — `SessionStore.swift:136-290`
+- [x] **SessionStore main-thread I/O blocking** — `SessionStore.swift:136-290`
   Move all file I/O (`savePartialTranscript`, `saveTranscript`, `loadTranscript`, `writeIndex`, etc.) to a serial background DispatchQueue. Currently blocks the main thread, causing UI stutter every 10s during recording.
 
-- [ ] **Data model versioning** — `Session.swift`, `SessionIndex.swift`, `Summary.swift`
+- [x] **Data model versioning** — `Session.swift`, `SessionIndex.swift`, `Summary.swift`
   Add `version` field and custom decoders with migration logic. Currently no way to evolve the schema without breaking existing session files. `Transcript.swift` has a version field but nothing reads it.
 
 ### High
 
-- [ ] **AudioSharedState check-then-act race** — `AudioSharedState.swift:40-48`, `RecordingPipeline.swift:62-68`
+- [x] **AudioSharedState check-then-act race** — `AudioSharedState.swift:40-48`, `RecordingPipeline.swift:62-68`
   Replace individual property lock/unlock with a single atomic `checkAndStart()` method. Current pattern allows interleaving between the read and write of `writerStarted`.
 
 - [ ] **CrashRecovery file validation** — `CrashRecovery.swift:44-62`

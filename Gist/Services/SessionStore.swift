@@ -21,6 +21,25 @@ final class SessionStore: ObservableObject {
         return d
     }()
 
+    /// Serial queue for all disk I/O — keeps writes off the main thread.
+    private nonisolated static let ioQueue = DispatchQueue(label: "com.vijaykas.gist.sessionstore.io", qos: .utility)
+    private static let ioLogger = Logger(subsystem: "com.vijaykas.gist", category: "SessionStore.IO")
+
+    /// Encode and write a Codable value to disk on the background I/O queue.
+    private nonisolated static func writeInBackground<T: Encodable & Sendable>(_ value: T, to url: URL) {
+        ioQueue.async {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            do {
+                let data = try encoder.encode(value)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                ioLogger.error("Background write failed for \(url.lastPathComponent): \(error)")
+            }
+        }
+    }
+
     var baseURL: URL {
         fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents")
@@ -135,12 +154,7 @@ final class SessionStore: ObservableObject {
     /// Save partial transcript during recording (for crash recovery).
     func savePartialTranscript(_ transcript: Transcript, for session: Session) {
         let url = partialTranscriptURL(for: session)
-        do {
-            let data = try encoder.encode(transcript)
-            try data.write(to: url, options: .atomic)
-        } catch {
-            logger.error("Failed to write partial transcript: \(error)")
-        }
+        Self.writeInBackground(transcript, to: url)
     }
 
     func audioPath(for sessionID: String) -> String? {
@@ -156,34 +170,27 @@ final class SessionStore: ObservableObject {
     // MARK: - Transcript
 
     func saveTranscript(_ transcript: Transcript, for session: Session) {
-        let url = transcriptURL(for: session)
-        do {
-            let data = try encoder.encode(transcript)
-            try data.write(to: url, options: .atomic)
+        // Update in-memory index on main thread (instant)
+        if let idx = sessions.firstIndex(where: { $0.id == session.id }) {
+            let isFirstTranscribe = sessions[idx].segmentCount == nil || sessions[idx].segmentCount == 0
 
-            // Update index entry
-            if let idx = sessions.firstIndex(where: { $0.id == session.id }) {
-                // Check before updating — only auto-name on first transcribe
-                let isFirstTranscribe = sessions[idx].segmentCount == nil || sessions[idx].segmentCount == 0
+            sessions[idx].hasTranscript = true
+            sessions[idx].segmentCount = transcript.segments.count
+            sessions[idx].model = transcript.model
 
-                sessions[idx].hasTranscript = true
-                sessions[idx].segmentCount = transcript.segments.count
-                sessions[idx].model = transcript.model
-
-                // Don't clobber user renames on re-transcribe
-                if isFirstTranscribe,
-                   let firstText = transcript.segments.first?.text, !firstText.isEmpty {
-                    let autoName = String(firstText.prefix(40)).trimmingCharacters(in: .whitespaces)
-                    if !autoName.isEmpty {
-                        sessions[idx].name = autoName
-                    }
+            if isFirstTranscribe,
+               let firstText = transcript.segments.first?.text, !firstText.isEmpty {
+                let autoName = String(firstText.prefix(40)).trimmingCharacters(in: .whitespaces)
+                if !autoName.isEmpty {
+                    sessions[idx].name = autoName
                 }
-
-                writeIndex()
             }
-        } catch {
-            logger.error("Failed to write transcript: \(error)")
         }
+
+        // Write transcript and index to disk in background
+        let url = transcriptURL(for: session)
+        Self.writeInBackground(transcript, to: url)
+        writeIndex()
     }
 
     func loadTranscript(for sessionID: String) -> Transcript? {
@@ -212,13 +219,8 @@ final class SessionStore: ObservableObject {
 
     func saveSummary(_ summary: Summary, for sessionID: String) {
         guard let url = summaryURL(for: sessionID) else { return }
-        do {
-            let data = try encoder.encode(summary)
-            try data.write(to: url, options: .atomic)
-            logger.info("Summary saved for session: \(sessionID)")
-        } catch {
-            logger.error("Failed to write summary: \(error)")
-        }
+        Self.writeInBackground(summary, to: url)
+        logger.info("Summary saved for session: \(sessionID)")
     }
 
     func loadSummary(for sessionID: String) -> Summary? {
@@ -237,12 +239,7 @@ final class SessionStore: ObservableObject {
 
     private func writeMetadata(_ session: Session) {
         let url = metadataURL(for: session)
-        do {
-            let data = try encoder.encode(session)
-            try data.write(to: url, options: .atomic)
-        } catch {
-            logger.error("Failed to write metadata: \(error)")
-        }
+        Self.writeInBackground(session, to: url)
     }
 
     private func updateIndex(session: Session) {
@@ -269,12 +266,7 @@ final class SessionStore: ObservableObject {
     private func writeIndex() {
         let index = SessionIndex(sessions: sessions)
         let url = indexURL()
-        do {
-            let data = try encoder.encode(index)
-            try data.write(to: url, options: .atomic)
-        } catch {
-            logger.error("Failed to write sessions index: \(error)")
-        }
+        Self.writeInBackground(index, to: url)
     }
 
     private func loadIndex() {
@@ -296,15 +288,17 @@ final class SessionStore: ObservableObject {
         sessions[idx].name = newName
         writeIndex()
 
-        // Also update metadata.json on disk
+        // Update metadata.json on disk in background
         let metaURL = baseURL
             .appendingPathComponent(sessions[idx].path)
             .appendingPathComponent("metadata.json")
-        if let data = try? Data(contentsOf: metaURL),
-           var session = try? decoder.decode(Session.self, from: data) {
-            session.name = newName
-            if let encoded = try? encoder.encode(session) {
-                try? encoded.write(to: metaURL, options: .atomic)
+        Self.ioQueue.async {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let data = try? Data(contentsOf: metaURL),
+               var session = try? decoder.decode(Session.self, from: data) {
+                session.name = newName
+                Self.writeInBackground(session, to: metaURL)
             }
         }
     }

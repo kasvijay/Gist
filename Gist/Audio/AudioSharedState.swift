@@ -37,14 +37,19 @@ final class AudioSharedState: @unchecked Sendable {
     private var _callbackCount = 0
     private var _writerStarted = false
 
-    var callbackCount: Int {
-        get { lock.lock(); defer { lock.unlock() }; return _callbackCount }
-        set { lock.lock(); _callbackCount = newValue; lock.unlock() }
-    }
-
-    var writerStarted: Bool {
-        get { lock.lock(); defer { lock.unlock() }; return _writerStarted }
-        set { lock.lock(); _writerStarted = newValue; lock.unlock() }
+    /// Atomically check whether the writer should be skipped this callback.
+    /// Returns true if the writer is not yet ready (skip writing this buffer).
+    /// Returns false if the writer is already started or has just been started.
+    func shouldSkipWriter() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if _writerStarted { return false }
+        _callbackCount += 1
+        if !_ready && _callbackCount < 10 {
+            return true
+        }
+        _writerStarted = true
+        return false
     }
 
     func reset() {

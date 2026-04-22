@@ -59,12 +59,8 @@ final class RecordingPipeline: @unchecked Sendable {
             capturedStreamer?.appendBuffer(buffer)
 
             if captureSystem {
-                if !capturedState.writerStarted {
-                    capturedState.callbackCount += 1
-                    if !capturedState.isReady && capturedState.callbackCount < 10 {
-                        return
-                    }
-                    capturedState.writerStarted = true
+                if capturedState.shouldSkipWriter() {
+                    return
                 }
 
                 if let floatData = buffer.floatChannelData {

@@ -28,14 +28,17 @@ final class RecordingManager: ObservableObject {
 
     func startRecording(sessionStore: SessionStore, transcriptionEngine: TranscriptionEngine, diarizationManager: DiarizationManager) {
         guard !isRecording, !isStarting else { return }
+        isStarting = true
 
         // Check mic permission before attempting to record
         let permission = AVAudioApplication.shared.recordPermission
         if permission == .denied {
+            isStarting = false
             self.error = "Microphone access denied. Grant permission in System Settings → Privacy & Security → Microphone."
             return
         }
         if permission == .undetermined {
+            isStarting = false
             AVAudioApplication.requestRecordPermission { [weak self] granted in
                 Task { @MainActor in
                     if granted {
@@ -53,7 +56,6 @@ final class RecordingManager: ObservableObject {
 
         let streamer = transcriptionEngine.makeStreamingTranscriber(sampleRate: 16000)
         self.streamingTranscriber = streamer
-        isStarting = true
 
         // Pipeline start can block for 1-2s (Core Audio XPC setup) — run off main thread
         let capturedPipeline = pipeline
