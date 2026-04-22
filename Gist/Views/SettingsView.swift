@@ -11,7 +11,7 @@ struct SettingsView: View {
     @AppStorage("customModelPath") private var customModelPath = ""
     @AppStorage("summarizationModel") private var summarizationModel = "mlx-community/gemma-3-4b-it-qat-4bit"
     @AppStorage("diarizationMethod") private var diarizationMethod = "lsEend"
-    @AppStorage("autoSummarize") private var autoSummarize = true
+    @AppStorage("autoSummarize") private var autoSummarize = false
 
     @State private var micPermission: AVAudioApplication.recordPermission = .undetermined
     @State private var systemAudioGranted = false

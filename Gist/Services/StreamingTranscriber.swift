@@ -66,13 +66,27 @@ final class StreamingTranscriber: @unchecked Sendable {
         return (_audioSamples.count, _lastTranscribedCount)
     }
 
-    private func copySamplesForTranscription() -> (samples: [Float], clipStart: Float) {
+    private func copySamplesForTranscription() -> (samples: [Float], trimOffset: Float, confirmedEnd: Float) {
         lock.lock()
         _lastTranscribedCount = _audioSamples.count
-        let samples = Array(_audioSamples)
-        let clipStart = _lastConfirmedEnd
+
+        // Trim: keep audio from 5s before confirmed end, capped at 30s total.
+        // This prevents the buffer from growing unboundedly during long recordings
+        // which would make each WhisperKit call progressively slower.
+        let contextSamples = 5 * 16000          // 5s overlap for transcription context
+        let maxBufferSamples = 30 * 16000       // 30s max (matches WhisperKit window)
+        let confirmedEndSample = Int(_lastConfirmedEnd * 16000)
+
+        let idealStart = max(0, confirmedEndSample - contextSamples)
+        let cappedStart = max(idealStart, _audioSamples.count - maxBufferSamples)
+        let safeStart = min(cappedStart, _audioSamples.count)
+
+        let samples = safeStart < _audioSamples.count ? Array(_audioSamples[safeStart...]) : []
+        let trimOffset = Float(safeStart) / 16000.0
+        let confirmedEnd = _lastConfirmedEnd
+
         lock.unlock()
-        return (samples, clipStart)
+        return (samples, trimOffset, confirmedEnd)
     }
 
     private func updateSegments(from segments: [TranscriptionSegment]) -> ([TranscriptionSegment], [TranscriptionSegment]) {
@@ -184,10 +198,14 @@ final class StreamingTranscriber: @unchecked Sendable {
         let newSeconds = Float(newSamples) / 16000.0
         guard newSeconds >= minBufferSeconds else { return }
 
-        let (samples, clipStart) = copySamplesForTranscription()
+        let (samples, trimOffset, confirmedEnd) = copySamplesForTranscription()
+        guard !samples.isEmpty else { return }
+
+        // clipStart is relative to the trimmed buffer
+        let relativeClipStart = max(0, confirmedEnd - trimOffset)
 
         var options = DecodingOptions(usePrefillPrompt: false, detectLanguage: true, wordTimestamps: true)
-        options.clipTimestamps = [clipStart]
+        options.clipTimestamps = [relativeClipStart]
 
         let results: [TranscriptionResult] = try await whisperKit.transcribe(
             audioArray: samples,
@@ -196,7 +214,14 @@ final class StreamingTranscriber: @unchecked Sendable {
 
         guard let result = results.first else { return }
 
-        let (confirmed, unconfirmed) = updateSegments(from: result.segments)
+        // Offset segment timestamps from trimmed-buffer-relative to absolute
+        var adjustedSegments = result.segments
+        for i in adjustedSegments.indices {
+            adjustedSegments[i].start += trimOffset
+            adjustedSegments[i].end += trimOffset
+        }
+
+        let (confirmed, unconfirmed) = updateSegments(from: adjustedSegments)
         onSegmentsUpdated?(confirmed, unconfirmed)
     }
 }

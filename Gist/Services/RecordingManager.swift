@@ -135,7 +135,7 @@ final class RecordingManager: ObservableObject {
             let m4aURL = sessionStore.audioFileURL(for: session)
             let sessionID = session.id
             let useVBx = diarizationManager.method == .vbx
-            let shouldSummarize = UserDefaults.standard.object(forKey: "autoSummarize") as? Bool ?? true
+            let shouldSummarize = UserDefaults.standard.object(forKey: "autoSummarize") as? Bool ?? false
 
             // Post-recording work (diarization, summarization, conversion) runs off main thread
             if useVBx {
