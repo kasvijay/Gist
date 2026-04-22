@@ -60,6 +60,17 @@ final class MicrophoneCapture: @unchecked Sendable {
             _ = engine.mainMixerNode
             let inputNode = engine.inputNode
 
+            // installTap throws NSException (not Swift error) on format mismatch,
+            // so validate channel count before attempting the tap.
+            if let fmt = format {
+                let nodeFormat = inputNode.outputFormat(forBus: 0)
+                if nodeFormat.sampleRate > 0 && fmt.channelCount != nodeFormat.channelCount {
+                    logger.warning("Skipping \(label): channel count mismatch (\(fmt.channelCount) vs \(nodeFormat.channelCount))")
+                    lastError = CaptureError.invalidFormat
+                    continue
+                }
+            }
+
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, time in
                 bufferHandler(buffer, time)
             }
@@ -121,42 +132,58 @@ final class MicrophoneCapture: @unchecked Sendable {
 
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
-
-        // Recreate engine for clean state
-        engine = AVAudioEngine()
         stopConfigurationChangeMonitoring()
 
-        _ = engine.mainMixerNode
-        let inputNode = engine.inputNode
+        // Build format strategies — fresh engine per attempt (mirrors start())
+        // Try: new device's native format, engine-chosen (nil), 48kHz mono fallback
+        var strategies: [(String, AVAudioFormat?)] = []
 
-        // Try original format first (writer compatibility), then nil, then 48kHz mono
-        let formats: [AVAudioFormat?] = [
-            inputFormat,
-            nil,
-            AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1),
-        ]
+        // Read native format from a fresh engine to pick up the new device
+        let probeEngine = AVAudioEngine()
+        _ = probeEngine.mainMixerNode
+        let native = probeEngine.inputNode.outputFormat(forBus: 0)
+        if native.sampleRate > 0 && native.channelCount > 0 {
+            strategies.append(("native \(native.sampleRate)Hz/\(native.channelCount)ch", native))
+        }
+        strategies.append(("engine-chosen (nil)", nil))
+        if let fallback = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1) {
+            strategies.append(("48kHz mono fallback", fallback))
+        }
 
-        for format in formats {
-            inputNode.removeTap(onBus: 0)
+        for (label, format) in strategies {
+            // Fresh engine per attempt — a failed installTap/start leaves the engine
+            // in a corrupted state that can't be reused.
+            engine = AVAudioEngine()
+            _ = engine.mainMixerNode
+            let inputNode = engine.inputNode
+
+            // installTap throws NSException (not Swift error) on format mismatch,
+            // so we must validate the format before attempting the tap.
+            if let fmt = format {
+                let nodeFormat = inputNode.outputFormat(forBus: 0)
+                if nodeFormat.sampleRate > 0 && fmt.channelCount != nodeFormat.channelCount {
+                    logger.warning("Skipping \(label): channel count mismatch (\(fmt.channelCount) vs \(nodeFormat.channelCount))")
+                    continue
+                }
+            }
+
             inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
                 handler(buffer)
             }
             engine.prepare()
             do {
                 try engine.start()
-                if format == nil {
-                    inputFormat = inputNode.outputFormat(forBus: 0)
-                } else {
-                    inputFormat = format
-                }
+                inputFormat = format ?? inputNode.outputFormat(forBus: 0)
+                isCapturing = true
                 startConfigurationChangeMonitoring()
                 let fmt = inputFormat!
-                logger.info("Mic recovered after device change: \(fmt.sampleRate)Hz, \(fmt.channelCount)ch")
+                logger.info("Mic recovered after device change (\(label)): \(fmt.sampleRate)Hz, \(fmt.channelCount)ch")
                 onRecovered?()
                 return
             } catch {
                 engine.stop()
-                logger.warning("Recovery attempt failed: \(error.localizedDescription)")
+                inputNode.removeTap(onBus: 0)
+                logger.warning("Recovery attempt failed with \(label): \(error.localizedDescription)")
             }
         }
 
