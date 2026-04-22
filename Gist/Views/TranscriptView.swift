@@ -15,7 +15,7 @@ struct TranscriptView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(transcript.segments) { segment in
                     HStack(alignment: .top, spacing: 12) {
                         Text(formatTimestamp(segment.start))

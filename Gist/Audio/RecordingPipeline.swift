@@ -54,6 +54,9 @@ final class RecordingPipeline: @unchecked Sendable {
         let capturedState = state
         let capturedStreamer = streamer
 
+        // Pre-allocated buffer for mixed output — avoids heap allocation on every callback
+        var mixOutputBuffer: AVAudioPCMBuffer?
+
         // Start mic with mixing
         mic.bufferHandler = { buffer in
             capturedStreamer?.appendBuffer(buffer)
@@ -65,13 +68,18 @@ final class RecordingPipeline: @unchecked Sendable {
 
                 if let floatData = buffer.floatChannelData {
                     let frameCount = Int(buffer.frameLength)
-                    let micSamples = Array(UnsafeBufferPointer(start: floatData[0], count: frameCount))
                     let sysSamples = capturedState.consumeSystemSamples(count: frameCount)
 
                     if !sysSamples.isEmpty {
-                        let mixed = capturedMixer.mix(micSamples: micSamples, systemSamples: sysSamples)
-                        if let mixedBuffer = RecordingPipeline.floatsToBuffer(mixed, format: buffer.format) {
-                            capturedWriter.append(buffer: mixedBuffer)
+                        // Ensure reusable output buffer exists with enough capacity
+                        if mixOutputBuffer == nil || mixOutputBuffer!.frameCapacity < AVAudioFrameCount(frameCount) {
+                            mixOutputBuffer = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(frameCount))
+                        }
+
+                        // Mix directly into pre-allocated buffer — zero intermediate allocations
+                        if let outBuf = mixOutputBuffer,
+                           capturedMixer.mixInto(outputBuffer: outBuf, micPtr: floatData[0], micCount: frameCount, systemSamples: sysSamples) {
+                            capturedWriter.append(buffer: outBuf)
                         } else {
                             capturedWriter.append(buffer: buffer)
                         }
@@ -192,19 +200,4 @@ final class RecordingPipeline: @unchecked Sendable {
         outputDeviceListenerBlock = nil
     }
 
-    static func floatsToBuffer(_ floats: [Float], format: AVAudioFormat) -> AVAudioPCMBuffer? {
-        let frameCount = AVAudioFrameCount(floats.count)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return nil }
-        buffer.frameLength = frameCount
-
-        guard let channelData = buffer.floatChannelData else { return nil }
-        let channels = Int(format.channelCount)
-
-        for ch in 0..<channels {
-            floats.withUnsafeBufferPointer { ptr in
-                channelData[ch].initialize(from: ptr.baseAddress!, count: Int(frameCount))
-            }
-        }
-        return buffer
-    }
 }

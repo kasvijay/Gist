@@ -17,6 +17,9 @@ final class AudioFileWriter: @unchecked Sendable {
     private var _isWriting = false
     private var _outputURL: URL?
 
+    /// Serial queue for disk writes — keeps I/O off the audio thread.
+    private let writeQueue = DispatchQueue(label: "com.vijaykas.gist.audiowriter", qos: .userInitiated)
+
     var isWriting: Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -63,25 +66,50 @@ final class AudioFileWriter: @unchecked Sendable {
     }
 
     /// Append a PCM buffer. Call from the audio tap callback.
+    /// Copies the buffer and dispatches the disk write to a background queue
+    /// so the audio thread is never blocked by I/O.
     func append(buffer: AVAudioPCMBuffer) {
         guard buffer.frameLength > 0 else { return }
 
         lock.lock()
-        guard _isWriting, let file = audioFile else {
+        guard _isWriting else {
             lock.unlock()
             return
         }
-        do {
-            try file.write(from: buffer)
-        } catch {
-            logger.error("Failed to write audio buffer: \(error)")
-        }
         lock.unlock()
+
+        // Copy buffer data for async write — the original buffer may be reused by Core Audio
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return }
+        copy.frameLength = buffer.frameLength
+        if let src = buffer.floatChannelData, let dst = copy.floatChannelData {
+            for ch in 0..<Int(buffer.format.channelCount) {
+                memcpy(dst[ch], src[ch], Int(buffer.frameLength) * MemoryLayout<Float>.size)
+            }
+        }
+
+        writeQueue.async { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            guard self._isWriting, let file = self.audioFile else {
+                self.lock.unlock()
+                return
+            }
+            do {
+                try file.write(from: copy)
+            } catch {
+                self.logger.error("Failed to write audio buffer: \(error)")
+            }
+            self.lock.unlock()
+        }
     }
 
-    /// Finish writing. Returns the WAV output URL for conversion.
+    /// Finish writing. Waits for pending writes, then closes the file.
+    /// Returns the WAV output URL for conversion.
     @discardableResult
     func finish() -> URL? {
+        // Drain pending writes before closing
+        writeQueue.sync {}
+
         lock.lock()
         guard _isWriting else {
             lock.unlock()

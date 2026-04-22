@@ -42,39 +42,51 @@ final class AudioMixer: @unchecked Sendable {
         return mono
     }
 
-    /// Compute RMS energy of a float buffer.
-    func rmsEnergy(_ samples: [Float]) -> Float {
-        guard !samples.isEmpty else { return 0 }
+    // Pre-allocated working buffer — resized only when frame count grows
+    private var _scaledSystem = [Float]()
+
+    /// Mix mic and system audio, writing result directly into outputBuffer.
+    /// micPtr points to the AVAudioPCMBuffer's float channel data (no copy needed).
+    /// Returns true if mixing succeeded, false if caller should fall back to raw mic.
+    func mixInto(
+        outputBuffer: AVAudioPCMBuffer,
+        micPtr: UnsafePointer<Float>,
+        micCount: Int,
+        systemSamples: [Float]
+    ) -> Bool {
+        let count = min(micCount, systemSamples.count)
+        guard count > 0 else { return false }
+        guard let channelData = outputBuffer.floatChannelData else { return false }
+
+        if _scaledSystem.count < count {
+            _scaledSystem = [Float](repeating: 0, count: count)
+        }
+
+        // RMS directly from pointer — no array copy
         var rms: Float = 0
-        vDSP_rmsqv(samples, 1, &rms, vDSP_Length(samples.count))
-        return rms
-    }
-
-    /// Mix mic and system samples with ducking.
-    /// Both inputs should be mono at the same sample rate.
-    /// Returns mixed mono samples.
-    func mix(micSamples: [Float], systemSamples: [Float]) -> [Float] {
-        let count = min(micSamples.count, systemSamples.count)
-        guard count > 0 else { return micSamples.isEmpty ? systemSamples : micSamples }
-
-        let micRMS = rmsEnergy(Array(micSamples.prefix(count)))
-        let ducking: Float = micRMS > duckingThreshold ? duckingAmount : 1.0
-
-        var mixed = [Float](repeating: 0, count: count)
-        var scaledSystem = [Float](repeating: 0, count: count)
+        vDSP_rmsqv(micPtr, 1, &rms, vDSP_Length(count))
+        let ducking: Float = rms > duckingThreshold ? duckingAmount : 1.0
 
         // Scale system audio by ducking factor
         var duckFactor = ducking
-        vDSP_vsmul(systemSamples, 1, &duckFactor, &scaledSystem, 1, vDSP_Length(count))
+        vDSP_vsmul(systemSamples, 1, &duckFactor, &_scaledSystem, 1, vDSP_Length(count))
 
-        // Add mic + ducked system
-        vDSP_vadd(micSamples, 1, scaledSystem, 1, &mixed, 1, vDSP_Length(count))
+        // Add mic + ducked system directly into output buffer's channel data
+        let output = channelData[0]
+        vDSP_vadd(micPtr, 1, _scaledSystem, 1, output, 1, vDSP_Length(count))
 
         // Clip prevention: soft clamp to [-1, 1]
         var lo: Float = -1.0
         var hi: Float = 1.0
-        vDSP_vclip(mixed, 1, &lo, &hi, &mixed, 1, vDSP_Length(count))
+        vDSP_vclip(output, 1, &lo, &hi, output, 1, vDSP_Length(count))
 
-        return mixed
+        // Copy to other channels if multi-channel
+        let channels = Int(outputBuffer.format.channelCount)
+        for ch in 1..<channels {
+            memcpy(channelData[ch], output, count * MemoryLayout<Float>.size)
+        }
+
+        outputBuffer.frameLength = AVAudioFrameCount(count)
+        return true
     }
 }

@@ -31,21 +31,21 @@
 
 ### Critical
 
-- [ ] **Audio callback heap allocations** — `RecordingPipeline.swift:72-73`
+- [x] **Audio callback heap allocations** — `RecordingPipeline.swift:72-73`
   Replace `Array(UnsafeBufferPointer(...))` with pre-allocated reusable buffers. Currently allocates on every audio callback (~11 times/second).
 
-- [ ] **Blocking file write on audio thread** — `AudioFileWriter.swift:66-80`
+- [x] **Blocking file write on audio thread** — `AudioFileWriter.swift:66-80`
   Queue `file.write(from: buffer)` to a background thread. Synchronous disk I/O on the audio thread causes dropped frames on slow disks.
 
-- [ ] **HighPassFilter allocations on audio thread** — `HighPassFilter.swift:31-36`
+- [x] **HighPassFilter allocations on audio thread** — `HighPassFilter.swift:31-36`
   Pre-allocate reusable Double/Float working buffers instead of creating new arrays on every callback (currently three heap allocations per callback).
 
 ### High
 
-- [ ] **Unbounded streaming audio buffer** — `StreamingTranscriber.swift:19`
+- [x] **Unbounded streaming audio buffer** — `StreamingTranscriber.swift:19`
   Replace unbounded `_audioSamples` array with a ring buffer or sliding window. A 2-hour meeting accumulates ~460 MB in this buffer alone.
 
-- [ ] **TranscriptView not using LazyVStack** — `TranscriptView.swift:17-45`
+- [x] **TranscriptView not using LazyVStack** — `TranscriptView.swift:17-45`
   Change `VStack` to `LazyVStack` so segments render only when visible. `LiveTranscriptView` already does this correctly.
 
 - [ ] **Transcript loading not cached** — `SessionDetailView.swift:112`

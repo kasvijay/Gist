@@ -18,6 +18,7 @@ final class StreamingTranscriber: @unchecked Sendable {
     // All mutable state — access only via locked helpers
     private var _audioSamples: [Float] = []
     private var _lastTranscribedCount: Int = 0
+    private var _trimmedSampleCount: Int = 0  // total samples removed from front of buffer
     private var _isRunning = false
     private var _confirmedSegments: [TranscriptionSegment] = []
     private var _unconfirmedSegments: [TranscriptionSegment] = []
@@ -44,6 +45,7 @@ final class StreamingTranscriber: @unchecked Sendable {
         _unconfirmedSegments = []
         _audioSamples = []
         _lastTranscribedCount = 0
+        _trimmedSampleCount = 0
         _lastConfirmedEnd = 0
         lock.unlock()
     }
@@ -63,27 +65,41 @@ final class StreamingTranscriber: @unchecked Sendable {
     private func snapshotForTranscription() -> (sampleCount: Int, lastCount: Int) {
         lock.lock()
         defer { lock.unlock() }
-        return (_audioSamples.count, _lastTranscribedCount)
+        // Use absolute counts (including trimmed samples) so "new samples" detection
+        // works correctly even after old samples are removed from the buffer.
+        return (_trimmedSampleCount + _audioSamples.count, _lastTranscribedCount)
     }
 
     private func copySamplesForTranscription() -> (samples: [Float], trimOffset: Float, confirmedEnd: Float) {
         lock.lock()
-        _lastTranscribedCount = _audioSamples.count
 
         // Trim: keep audio from 5s before confirmed end, capped at 30s total.
         // This prevents the buffer from growing unboundedly during long recordings
         // which would make each WhisperKit call progressively slower.
         let contextSamples = 5 * 16000          // 5s overlap for transcription context
         let maxBufferSamples = 30 * 16000       // 30s max (matches WhisperKit window)
-        let confirmedEndSample = Int(_lastConfirmedEnd * 16000)
 
-        let idealStart = max(0, confirmedEndSample - contextSamples)
+        // Convert confirmed end from absolute time to index relative to current buffer
+        let confirmedEndAbsolute = Int(_lastConfirmedEnd * 16000)
+        let relativeConfirmedEnd = max(0, confirmedEndAbsolute - _trimmedSampleCount)
+
+        let idealStart = max(0, relativeConfirmedEnd - contextSamples)
         let cappedStart = max(idealStart, _audioSamples.count - maxBufferSamples)
         let safeStart = min(cappedStart, _audioSamples.count)
 
         let samples = safeStart < _audioSamples.count ? Array(_audioSamples[safeStart...]) : []
-        let trimOffset = Float(safeStart) / 16000.0
+        let absoluteSafeStart = _trimmedSampleCount + safeStart
+        let trimOffset = Float(absoluteSafeStart) / 16000.0
         let confirmedEnd = _lastConfirmedEnd
+
+        // Remove old confirmed samples from the buffer to bound memory usage.
+        // After this, _audioSamples only holds recent unprocessed audio.
+        if safeStart > 0 {
+            _audioSamples.removeFirst(safeStart)
+            _trimmedSampleCount += safeStart
+        }
+
+        _lastTranscribedCount = _trimmedSampleCount + _audioSamples.count
 
         lock.unlock()
         return (samples, trimOffset, confirmedEnd)

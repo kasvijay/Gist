@@ -6,6 +6,10 @@ struct HighPassFilter {
     private var coefficients: [Double] = []
     private var delays: [Double] = []
 
+    // Pre-allocated working buffers — resized only when sample count grows
+    private var _doubleBuf: [Double] = []
+    private var _outputBuf: [Double] = []
+
     init(cutoffHz: Double = 80.0, sampleRate: Double = 48000.0) {
         // Compute biquad coefficients for a 2nd-order Butterworth high-pass
         let w0 = 2.0 * Double.pi * cutoffHz / sampleRate
@@ -27,12 +31,21 @@ struct HighPassFilter {
     mutating func apply(to samples: inout [Float]) {
         guard !samples.isEmpty, coefficients.count == 5 else { return }
 
-        let count = vDSP_Length(samples.count)
-        var doubleSamples = samples.map { Double($0) }
-        var output = [Double](repeating: 0, count: samples.count)
+        let n = samples.count
+        let count = vDSP_Length(n)
 
-        vDSP_deq22D(&doubleSamples, 1, &coefficients, &output, 1, count - 2)
+        // Resize working buffers only when needed (no per-call allocation)
+        if _doubleBuf.count < n {
+            _doubleBuf = [Double](repeating: 0, count: n)
+            _outputBuf = [Double](repeating: 0, count: n)
+        }
 
-        samples = output.map { Float($0) }
+        // Float → Double using vDSP (no .map allocation)
+        vDSP_vspdp(samples, 1, &_doubleBuf, 1, count)
+
+        vDSP_deq22D(&_doubleBuf, 1, &coefficients, &_outputBuf, 1, count - 2)
+
+        // Double → Float using vDSP (no .map allocation)
+        vDSP_vdpsp(_outputBuf, 1, &samples, 1, count)
     }
 }
