@@ -54,8 +54,12 @@ final class RecordingPipeline: @unchecked Sendable {
         let capturedState = state
         let capturedStreamer = streamer
 
-        // Pre-allocated buffer for mixed output — avoids heap allocation on every callback
-        var mixOutputBuffer: AVAudioPCMBuffer?
+        // Pre-allocated buffer holder for mixed output — class wrapper so the
+        // @Sendable closure captures a let reference, not a mutable var.
+        class MixBufferHolder: @unchecked Sendable {
+            var buffer: AVAudioPCMBuffer?
+        }
+        let mixHolder = MixBufferHolder()
 
         // Start mic with mixing
         mic.bufferHandler = { buffer in
@@ -72,12 +76,12 @@ final class RecordingPipeline: @unchecked Sendable {
 
                     if !sysSamples.isEmpty {
                         // Ensure reusable output buffer exists with enough capacity
-                        if mixOutputBuffer == nil || mixOutputBuffer!.frameCapacity < AVAudioFrameCount(frameCount) {
-                            mixOutputBuffer = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(frameCount))
+                        if mixHolder.buffer == nil || mixHolder.buffer!.frameCapacity < AVAudioFrameCount(frameCount) {
+                            mixHolder.buffer = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(frameCount))
                         }
 
                         // Mix directly into pre-allocated buffer — zero intermediate allocations
-                        if let outBuf = mixOutputBuffer,
+                        if let outBuf = mixHolder.buffer,
                            capturedMixer.mixInto(outputBuffer: outBuf, micPtr: floatData[0], micCount: frameCount, systemSamples: sysSamples) {
                             capturedWriter.append(buffer: outBuf)
                         } else {
