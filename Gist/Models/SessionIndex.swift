@@ -16,6 +16,7 @@ struct SessionIndex: Codable {
         var hasTranscript: Bool
         var segmentCount: Int?
         var languagesDetected: [String]?
+        var isPinned: Bool?
     }
 
     init(sessions: [SessionEntry]) {

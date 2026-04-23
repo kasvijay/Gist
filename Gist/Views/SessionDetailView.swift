@@ -60,27 +60,71 @@ struct SessionDetailView: View {
                     Spacer()
                 }
             } else if let transcript = sessionStore.loadTranscript(for: sessionID) {
-                // Model info + Tab bar + Summarize button
-                HStack {
-                    Text("Model: \(transcript.model)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
+                let entry = sessionStore.sessions.first { $0.id == sessionID }
+                let loadedSummary = summarizationEngine.currentSummary ?? sessionStore.loadSummary(for: sessionID)
+
+                // Session header
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(entry?.name ?? "Session")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    if let date = entry?.startedAt {
+                        Text(date, format: .dateTime.weekday(.wide).month(.wide).day().year().hour().minute())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                    }
+
+                    // Metadata row
+                    HStack(spacing: 14) {
+                        if let duration = entry?.durationSeconds {
+                            Label(formatTime(duration), systemImage: "clock")
+                        }
+                        if let speakers = transcript.speakers, !speakers.isEmpty {
+                            Label("\(speakers.count) speakers", systemImage: "person.2")
+                        }
+                        Label(transcript.model, systemImage: "waveform")
+                        if let actions = loadedSummary?.actionItems, !actions.isEmpty {
+                            Label("\(actions.count) actions", systemImage: "checklist")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
-                .padding(.top, 4)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
+                // Tab bar + action buttons
                 HStack {
                     Picker("View", selection: $activeTab) {
-                        Text("Transcript").tag(DetailTab.transcript)
                         Text("Summary").tag(DetailTab.summary)
+                        Text("Transcript").tag(DetailTab.transcript)
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 200)
 
                     Spacer()
 
-                    if activeTab == .transcript {
+                    if activeTab == .summary {
+                        Button {
+                            summarizationEngine.currentSummary = nil
+                            summarizationEngine.startSummarization(
+                                transcript: transcript,
+                                transcriptionEngine: transcriptionEngine
+                            ) { summary in
+                                if let summary {
+                                    sessionStore.saveSummary(summary, for: sessionID)
+                                }
+                            }
+                        } label: {
+                            Label("Regenerate", systemImage: "arrow.clockwise")
+                        }
+                        .controlSize(.small)
+                        .disabled(summarizationEngine.isWorking)
+                    } else {
                         Button {
                             activeTab = .summary
                             summarizationEngine.startSummarization(
@@ -99,7 +143,7 @@ struct SessionDetailView: View {
                     }
                 }
                 .padding(.horizontal)
-                .padding(.vertical, 8)
+                .padding(.bottom, 8)
 
                 Divider()
 

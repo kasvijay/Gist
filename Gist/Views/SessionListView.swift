@@ -10,39 +10,101 @@ struct SessionListView: View {
     @Binding var selectedSessionID: String?
     @State private var renamingSessionID: String?
     @State private var renameText: String = ""
+    @State private var searchText: String = ""
     @FocusState private var renameFieldFocused: Bool
 
+    private var filteredSessions: [SessionIndex.SessionEntry] {
+        if searchText.isEmpty {
+            return sessionStore.sessions
+        }
+        return sessionStore.sessions.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var groupedSessions: [(String, [SessionIndex.SessionEntry])] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+
+        var pinned: [SessionIndex.SessionEntry] = []
+        var todaySessions: [SessionIndex.SessionEntry] = []
+        var yesterdaySessions: [SessionIndex.SessionEntry] = []
+        var earlier: [SessionIndex.SessionEntry] = []
+
+        for session in filteredSessions {
+            if session.isPinned == true {
+                pinned.append(session)
+            } else if calendar.isDate(session.startedAt, inSameDayAs: today) {
+                todaySessions.append(session)
+            } else if calendar.isDate(session.startedAt, inSameDayAs: yesterday) {
+                yesterdaySessions.append(session)
+            } else {
+                earlier.append(session)
+            }
+        }
+
+        var groups: [(String, [SessionIndex.SessionEntry])] = []
+        if !pinned.isEmpty { groups.append(("PINNED", pinned)) }
+        if !todaySessions.isEmpty { groups.append(("TODAY", todaySessions)) }
+        if !yesterdaySessions.isEmpty { groups.append(("YESTERDAY", yesterdaySessions)) }
+        if !earlier.isEmpty { groups.append(("EARLIER", earlier)) }
+        return groups
+    }
+
     var body: some View {
-        List(selection: $selectedSessionID) {
-            Section("Sessions") {
-            // Active recording at top
-            if recordingManager.isRecording {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Recording...")
-                            .font(.body)
-                            .fontWeight(.medium)
-                        Text(formatTime(recordingManager.elapsedTime))
-                            .font(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            // New recording button
+            Button {
+                recordingManager.startRecording(
+                    sessionStore: sessionStore,
+                    transcriptionEngine: transcriptionEngine,
+                    diarizationManager: diarizationManager
+                )
+            } label: {
+                Label("New recording", systemImage: "plus.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(recordingManager.isRecording || recordingManager.isStarting || transcriptionEngine.state != .ready)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            List(selection: $selectedSessionID) {
+                // Active recording at top
+                if recordingManager.isRecording {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(recordingManager.isPaused ? "Paused" : "Recording...")
+                                .font(.body)
+                                .fontWeight(.medium)
+                            Text(formatTime(recordingManager.elapsedTime))
+                                .font(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .listRowBackground(Color.red.opacity(0.05))
+                }
+
+                // Grouped sessions
+                ForEach(groupedSessions, id: \.0) { group in
+                    Section(group.0) {
+                        ForEach(group.1) { session in
+                            sessionRow(session)
+                                .tag(session.id)
+                                .contextMenu { contextMenu(for: session) }
+                        }
                     }
                 }
-                .listRowBackground(Color.red.opacity(0.05))
             }
-
-            // Past sessions
-            ForEach(sessionStore.sessions) { session in
-                sessionRow(session)
-                    .tag(session.id)
-                    .contextMenu { contextMenu(for: session) }
-            }
-            } // end Section
+            .listStyle(.sidebar)
+            .searchable(text: $searchText, placement: .sidebar, prompt: "Search sessions...")
         }
-        .listStyle(.sidebar)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Menu {
@@ -76,20 +138,29 @@ struct SessionListView: View {
                         renamingSessionID = nil
                     }
             } else {
-                Text(session.name)
-                    .font(.body)
-                    .lineLimit(1)
+                HStack {
+                    Text(session.name)
+                        .font(.body)
+                        .lineLimit(1)
+                    if session.isPinned == true {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             HStack(spacing: 6) {
-                Text(session.startedAt, style: .date)
+                Text(session.startedAt, format: .dateTime.hour().minute())
                 if let duration = session.durationSeconds {
                     Text("·")
                     Text(formatTime(duration))
                         .monospacedDigit()
                 }
-                if session.hasTranscript {
+                if let count = session.segmentCount, count > 0 {
+                    Text("·")
                     Image(systemName: "text.alignleft")
+                    Text("\(count)")
                 }
             }
             .font(.caption)
@@ -102,6 +173,15 @@ struct SessionListView: View {
 
     @ViewBuilder
     private func contextMenu(for session: SessionIndex.SessionEntry) -> some View {
+        if session.isPinned == true {
+            Button("Unpin") {
+                sessionStore.unpinSession(id: session.id)
+            }
+        } else {
+            Button("Pin") {
+                sessionStore.pinSession(id: session.id)
+            }
+        }
         Button("Rename") {
             renameText = session.name
             renamingSessionID = session.id

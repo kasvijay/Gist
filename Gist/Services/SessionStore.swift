@@ -283,6 +283,18 @@ final class SessionStore: ObservableObject {
 
     // MARK: - Session Management
 
+    func pinSession(id: String) {
+        guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[idx].isPinned = true
+        writeIndex()
+    }
+
+    func unpinSession(id: String) {
+        guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[idx].isPinned = nil
+        writeIndex()
+    }
+
     func renameSession(id: String, newName: String) {
         guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
         sessions[idx].name = newName
