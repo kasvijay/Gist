@@ -48,8 +48,10 @@ final class AudioMixer: @unchecked Sendable {
     /// Mix mic and system audio, writing result directly into outputBuffer.
     /// micPtr points to the AVAudioPCMBuffer's float channel data (no copy needed).
     /// Returns true if mixing succeeded, false if caller should fall back to raw mic.
+    @discardableResult
     func mixInto(
         outputBuffer: AVAudioPCMBuffer,
+        micMuted: Bool = false,
         micPtr: UnsafePointer<Float>,
         micCount: Int,
         systemSamples: [Float]
@@ -62,18 +64,24 @@ final class AudioMixer: @unchecked Sendable {
             _scaledSystem = [Float](repeating: 0, count: count)
         }
 
-        // RMS directly from pointer — no array copy
-        var rms: Float = 0
-        vDSP_rmsqv(micPtr, 1, &rms, vDSP_Length(count))
-        let ducking: Float = rms > duckingThreshold ? duckingAmount : 1.0
-
-        // Scale system audio by ducking factor
-        var duckFactor = ducking
-        vDSP_vsmul(systemSamples, 1, &duckFactor, &_scaledSystem, 1, vDSP_Length(count))
-
-        // Add mic + ducked system directly into output buffer's channel data
         let output = channelData[0]
-        vDSP_vadd(micPtr, 1, _scaledSystem, 1, output, 1, vDSP_Length(count))
+
+        if micMuted {
+            // Mic muted: write only system audio (no ducking, full volume)
+            memcpy(output, systemSamples, count * MemoryLayout<Float>.size)
+        } else {
+            // RMS directly from pointer — no array copy
+            var rms: Float = 0
+            vDSP_rmsqv(micPtr, 1, &rms, vDSP_Length(count))
+            let ducking: Float = rms > duckingThreshold ? duckingAmount : 1.0
+
+            // Scale system audio by ducking factor
+            var duckFactor = ducking
+            vDSP_vsmul(systemSamples, 1, &duckFactor, &_scaledSystem, 1, vDSP_Length(count))
+
+            // Add mic + ducked system directly into output buffer's channel data
+            vDSP_vadd(micPtr, 1, _scaledSystem, 1, output, 1, vDSP_Length(count))
+        }
 
         // Clip prevention: soft clamp to [-1, 1]
         var lo: Float = -1.0

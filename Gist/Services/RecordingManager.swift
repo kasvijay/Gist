@@ -11,6 +11,12 @@ final class RecordingManager: ObservableObject {
     @Published var error: String?
     @Published private(set) var systemAudioActive = false
     @Published var audioDeviceWarning: String?
+    @Published var isPaused = false
+    @Published var isMicMuted = false
+    @Published var micDeviceName: String = "Unknown Microphone"
+    @Published var micLevel: Float = 0
+    @Published var systemLevel: Float = 0
+    @Published var showConsentAlert = false
 
     private let pipeline = RecordingPipeline()
     private let logger = Logger(subsystem: "com.vijaykas.gist", category: "RecordingManager")
@@ -21,12 +27,74 @@ final class RecordingManager: ObservableObject {
     private(set) var lastSession: Session?
     private var streamingTranscriber: StreamingTranscriber?
     private var streamingTask: Task<Void, Never>?
+    private var pauseStart: Date?
+    private var totalPausedDuration: TimeInterval = 0
 
     // Weak references for partial save timer
     private weak var activeSessionStore: SessionStore?
     private weak var activeTranscriptionEngine: TranscriptionEngine?
 
+    // Stashed parameters for consent flow
+    private weak var pendingSessionStore: SessionStore?
+    private weak var pendingTranscriptionEngine: TranscriptionEngine?
+    private weak var pendingDiarizationManager: DiarizationManager?
+
+    // MARK: - Consent Flow
+
     func startRecording(sessionStore: SessionStore, transcriptionEngine: TranscriptionEngine, diarizationManager: DiarizationManager) {
+        guard !isRecording, !isStarting else { return }
+        pendingSessionStore = sessionStore
+        pendingTranscriptionEngine = transcriptionEngine
+        pendingDiarizationManager = diarizationManager
+        showConsentAlert = true
+    }
+
+    func confirmAndStartRecording() {
+        guard let sessionStore = pendingSessionStore,
+              let transcriptionEngine = pendingTranscriptionEngine,
+              let diarizationManager = pendingDiarizationManager else { return }
+        pendingSessionStore = nil
+        pendingTranscriptionEngine = nil
+        pendingDiarizationManager = nil
+        performStartRecording(sessionStore: sessionStore, transcriptionEngine: transcriptionEngine, diarizationManager: diarizationManager)
+    }
+
+    func cancelRecording() {
+        showConsentAlert = false
+        pendingSessionStore = nil
+        pendingTranscriptionEngine = nil
+        pendingDiarizationManager = nil
+    }
+
+    // MARK: - Pause / Resume
+
+    func pauseRecording() {
+        guard isRecording, !isPaused else { return }
+        isPaused = true
+        pauseStart = Date()
+        pipeline.setPaused(true)
+    }
+
+    func resumeRecording() {
+        guard isRecording, isPaused else { return }
+        if let start = pauseStart {
+            totalPausedDuration += Date().timeIntervalSince(start)
+        }
+        pauseStart = nil
+        isPaused = false
+        pipeline.setPaused(false)
+    }
+
+    // MARK: - Mic Mute
+
+    func toggleMicMute() {
+        isMicMuted.toggle()
+        pipeline.setMicMuted(isMicMuted)
+    }
+
+    // MARK: - Start Recording (internal)
+
+    private func performStartRecording(sessionStore: SessionStore, transcriptionEngine: TranscriptionEngine, diarizationManager: DiarizationManager) {
         guard !isRecording, !isStarting else { return }
         isStarting = true
 
@@ -42,7 +110,7 @@ final class RecordingManager: ObservableObject {
             AVAudioApplication.requestRecordPermission { [weak self] granted in
                 Task { @MainActor in
                     if granted {
-                        self?.startRecording(sessionStore: sessionStore, transcriptionEngine: transcriptionEngine, diarizationManager: diarizationManager)
+                        self?.performStartRecording(sessionStore: sessionStore, transcriptionEngine: transcriptionEngine, diarizationManager: diarizationManager)
                     } else {
                         self?.error = "Microphone access is required to record. Grant permission in System Settings → Privacy & Security → Microphone."
                     }
@@ -87,7 +155,15 @@ final class RecordingManager: ObservableObject {
                     }
                 }
 
+                self.pipeline.onAudioLevels = { [weak self] micRMS, systemRMS in
+                    Task { @MainActor in
+                        self?.micLevel = micRMS
+                        self?.systemLevel = systemRMS
+                    }
+                }
+
                 self.systemAudioActive = self.pipeline.systemAudioActive
+                self.micDeviceName = self.pipeline.micDeviceName ?? "Unknown Microphone"
                 self.isRecording = true
                 self.isStarting = false
                 self.recordingStart = Date()
@@ -119,6 +195,9 @@ final class RecordingManager: ObservableObject {
 
     func stopRecording(sessionStore: SessionStore, transcriptionEngine: TranscriptionEngine, diarizationManager: DiarizationManager, summarizationEngine: SummarizationEngine? = nil) -> (session: Session, duration: TimeInterval)? {
         guard isRecording, let session = lastSession else { return nil }
+
+        // Finalize pause if active
+        if isPaused { resumeRecording() }
 
         streamingTranscriber?.stop()
         streamingTask?.cancel()
@@ -177,6 +256,13 @@ final class RecordingManager: ObservableObject {
         activeTranscriptionEngine = nil
         systemAudioActive = false
         audioDeviceWarning = nil
+        isPaused = false
+        isMicMuted = false
+        pauseStart = nil
+        totalPausedDuration = 0
+        micDeviceName = "Unknown Microphone"
+        micLevel = 0
+        systemLevel = 0
 
         return (session, duration)
     }
@@ -201,7 +287,8 @@ final class RecordingManager: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let start = self.recordingStart else { return }
-                self.elapsedTime = Date().timeIntervalSince(start)
+                let currentPause = self.isPaused ? Date().timeIntervalSince(self.pauseStart ?? Date()) : 0
+                self.elapsedTime = Date().timeIntervalSince(start) - self.totalPausedDuration - currentPause
             }
         }
     }

@@ -12,7 +12,16 @@ struct ContentView: View {
         NavigationSplitView {
             SessionListView(selectedSessionID: $selectedSessionID)
         } detail: {
-            SessionDetailView(selectedSessionID: $selectedSessionID)
+            SessionDetailView(selectedSessionID: $selectedSessionID, onStop: {
+                if let result = recordingManager.stopRecording(
+                    sessionStore: sessionStore,
+                    transcriptionEngine: transcriptionEngine,
+                    diarizationManager: diarizationManager,
+                    summarizationEngine: summarizationEngine
+                ) {
+                    selectedSessionID = result.session.id
+                }
+            })
         }
         .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         .toolbar {
@@ -53,6 +62,16 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(recordingManager.error ?? "An unknown error occurred.")
+        }
+        .alert("Recording Consent", isPresented: $recordingManager.showConsentAlert) {
+            Button("Yes") {
+                recordingManager.confirmAndStartRecording()
+            }
+            Button("No", role: .cancel) {
+                recordingManager.cancelRecording()
+            }
+        } message: {
+            Text("Have you informed all participants that you are recording this conversation?")
         }
     }
 

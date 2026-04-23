@@ -21,8 +21,45 @@ final class RecordingPipeline: @unchecked Sendable {
     /// Parameter is true if mic auto-recovered, false if recovery failed.
     var onDeviceChanged: ((_ recovered: Bool) -> Void)?
 
+    /// Callback invoked with audio RMS levels for UI metering.
+    var onAudioLevels: ((_ micRMS: Float, _ systemRMS: Float) -> Void)?
+
+    /// Name of the current mic input device.
+    var micDeviceName: String? { mic.inputDeviceName }
+
     private var inputDeviceListenerBlock: AudioObjectPropertyListenerBlock?
     private var outputDeviceListenerBlock: AudioObjectPropertyListenerBlock?
+
+    // Pause and mic mute state — accessed from audio threads via lock
+    private let controlLock = NSLock()
+    private var _isPaused = false
+    private var _isMicMuted = false
+    private var _levelCallbackCount = 0
+    private var _lastSystemRMS: Float = 0
+
+    func setPaused(_ paused: Bool) {
+        controlLock.lock()
+        _isPaused = paused
+        controlLock.unlock()
+    }
+
+    func setMicMuted(_ muted: Bool) {
+        controlLock.lock()
+        _isMicMuted = muted
+        controlLock.unlock()
+    }
+
+    private var isPaused: Bool {
+        controlLock.lock()
+        defer { controlLock.unlock() }
+        return _isPaused
+    }
+
+    private var isMicMuted: Bool {
+        controlLock.lock()
+        defer { controlLock.unlock() }
+        return _isMicMuted
+    }
 
     func start(
         audioURL: URL,
@@ -34,9 +71,23 @@ final class RecordingPipeline: @unchecked Sendable {
 
         // Start system audio
         do {
-            systemCapture.bufferHandler = { [mixer, state] bufferList in
+            let capturedControlLock = controlLock
+            systemCapture.bufferHandler = { [weak self, mixer, state] bufferList in
+                capturedControlLock.lock()
+                let paused = self?._isPaused ?? false
+                capturedControlLock.unlock()
+                if paused { return }
+
                 if let samples = mixer.samplesFromBufferList(bufferList) {
                     state.appendSystemSamples(samples)
+                    // Store system RMS for level metering
+                    if !samples.isEmpty {
+                        var rms: Float = 0
+                        vDSP_rmsqv(samples, 1, &rms, vDSP_Length(samples.count))
+                        capturedControlLock.lock()
+                        self?._lastSystemRMS = rms
+                        capturedControlLock.unlock()
+                    }
                 }
             }
             try systemCapture.start()
@@ -62,8 +113,31 @@ final class RecordingPipeline: @unchecked Sendable {
         let mixHolder = MixBufferHolder()
 
         // Start mic with mixing
-        mic.bufferHandler = { buffer in
-            capturedStreamer?.appendBuffer(buffer)
+        let capturedControlLock = controlLock
+        mic.bufferHandler = { [weak self] buffer in
+            // Check pause/mute state
+            capturedControlLock.lock()
+            let paused = self?._isPaused ?? false
+            let micMuted = self?._isMicMuted ?? false
+            self?._levelCallbackCount = (self?._levelCallbackCount ?? 0) + 1
+            let shouldReportLevels = (self?._levelCallbackCount ?? 0) % 5 == 0
+            let systemRMS = self?._lastSystemRMS ?? 0
+            capturedControlLock.unlock()
+
+            if paused { return }
+
+            // Send mic audio to streaming transcriber (unless muted)
+            if !micMuted {
+                capturedStreamer?.appendBuffer(buffer)
+            }
+
+            // Compute and report audio levels every 5th callback (~10Hz)
+            if shouldReportLevels, let floatData = buffer.floatChannelData {
+                let frameCount = Int(buffer.frameLength)
+                var micRMS: Float = 0
+                vDSP_rmsqv(floatData[0], 1, &micRMS, vDSP_Length(frameCount))
+                self?.onAudioLevels?(micMuted ? 0 : micRMS, systemRMS)
+            }
 
             if captureSystem {
                 if capturedState.shouldSkipWriter() {
@@ -75,25 +149,29 @@ final class RecordingPipeline: @unchecked Sendable {
                     let sysSamples = capturedState.consumeSystemSamples(count: frameCount)
 
                     if !sysSamples.isEmpty {
-                        // Ensure reusable output buffer exists with enough capacity
                         if mixHolder.buffer == nil || mixHolder.buffer!.frameCapacity < AVAudioFrameCount(frameCount) {
                             mixHolder.buffer = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: AVAudioFrameCount(frameCount))
                         }
 
-                        // Mix directly into pre-allocated buffer — zero intermediate allocations
-                        if let outBuf = mixHolder.buffer,
+                        if micMuted {
+                            // Mic muted: write only system audio (use system samples directly)
+                            if let outBuf = mixHolder.buffer {
+                                capturedMixer.mixInto(outputBuffer: outBuf, micMuted: true, micPtr: floatData[0], micCount: frameCount, systemSamples: sysSamples)
+                                capturedWriter.append(buffer: outBuf)
+                            }
+                        } else if let outBuf = mixHolder.buffer,
                            capturedMixer.mixInto(outputBuffer: outBuf, micPtr: floatData[0], micCount: frameCount, systemSamples: sysSamples) {
                             capturedWriter.append(buffer: outBuf)
                         } else {
                             capturedWriter.append(buffer: buffer)
                         }
-                    } else {
+                    } else if !micMuted {
                         capturedWriter.append(buffer: buffer)
                     }
-                } else {
+                } else if !micMuted {
                     capturedWriter.append(buffer: buffer)
                 }
-            } else {
+            } else if !micMuted {
                 capturedWriter.append(buffer: buffer)
             }
         }
@@ -133,6 +211,13 @@ final class RecordingPipeline: @unchecked Sendable {
         state.reset()
         systemAudioActive = false
         onDeviceChanged = nil
+        onAudioLevels = nil
+        controlLock.lock()
+        _isPaused = false
+        _isMicMuted = false
+        _levelCallbackCount = 0
+        _lastSystemRMS = 0
+        controlLock.unlock()
     }
 
     // MARK: - Audio Device Change Monitoring

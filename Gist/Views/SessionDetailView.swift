@@ -13,10 +13,14 @@ struct SessionDetailView: View {
     enum DetailTab { case transcript, summary }
     @State private var activeTab: DetailTab = .transcript
 
+    var onStop: (() -> Void)?
+
     var body: some View {
         VStack(spacing: 0) {
             if recordingManager.isRecording {
-                recordingView
+                RecordingView {
+                    onStop?()
+                }
             } else if let sessionID = selectedSessionID {
                 savedSessionView(sessionID: sessionID)
             } else {
@@ -28,60 +32,6 @@ struct SessionDetailView: View {
             // Clear stale summary state when switching sessions
             summarizationEngine.currentSummary = nil
             summarizationEngine.streamingText = ""
-        }
-    }
-
-    // MARK: - Recording View
-
-    private var recordingView: some View {
-        VStack(spacing: 0) {
-            // Recording header
-            VStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    Circle().fill(.red).frame(width: 10, height: 10)
-                    Text("Recording")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                    Spacer()
-                    Text(formatTime(recordingManager.elapsedTime))
-                        .font(.title2)
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-                }
-                statusBadge
-
-                if let warning = recordingManager.audioDeviceWarning {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text(warning)
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
-            }
-            .padding()
-
-            Divider()
-
-            // Live transcript
-            if !transcriptionEngine.liveConfirmedSegments.isEmpty ||
-               !transcriptionEngine.liveUnconfirmedSegments.isEmpty {
-                LiveTranscriptView(
-                    confirmedSegments: transcriptionEngine.liveConfirmedSegments,
-                    unconfirmedSegments: transcriptionEngine.liveUnconfirmedSegments
-                )
-            } else {
-                VStack {
-                    Spacer()
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Waiting for speech...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-            }
         }
     }
 

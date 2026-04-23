@@ -7,6 +7,7 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     private(set) var isCapturing = false
     private(set) var inputFormat: AVAudioFormat?
+    private(set) var inputDeviceName: String?
 
     /// Stored handler for use with RecordingPipeline
     var bufferHandler: (@Sendable (AVAudioPCMBuffer) -> Void)?
@@ -81,10 +82,11 @@ final class MicrophoneCapture: @unchecked Sendable {
                 // Success — read the actual format
                 inputFormat = format ?? inputNode.outputFormat(forBus: 0)
                 isCapturing = true
+                inputDeviceName = AVCaptureDevice.default(for: .audio)?.localizedName
                 startConfigurationChangeMonitoring()
 
                 let fmt = inputFormat!
-                logger.info("Mic capture started (\(label)): \(fmt.sampleRate)Hz, \(fmt.channelCount)ch")
+                logger.info("Mic capture started (\(label)): \(fmt.sampleRate)Hz, \(fmt.channelCount)ch, device: \(self.inputDeviceName ?? "unknown")")
                 return
             } catch {
                 logger.warning("Mic start failed with \(label): \(error.localizedDescription)")
