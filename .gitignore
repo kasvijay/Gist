@@ -22,5 +22,8 @@ Package.resolved
 # Models cache (large ML models)
 *.mlmodelc
 
+# Local docs (kept locally, not tracked)
+docs/
+
 # Environment
 .env
