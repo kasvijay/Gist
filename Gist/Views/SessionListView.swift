@@ -62,14 +62,21 @@ struct SessionListView: View {
                     diarizationManager: diarizationManager
                 )
             } label: {
-                Label("New recording", systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.left")
+                        .font(.caption)
+                    Text("New recording")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+            .font(.body)
+            .fontWeight(.medium)
+            .keyboardShortcut("r", modifiers: .command)
             .disabled(recordingManager.isRecording || recordingManager.isStarting || transcriptionEngine.state != .ready)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
 
             List(selection: $selectedSessionID) {
                 // Active recording at top

@@ -23,13 +23,10 @@ struct ContentView: View {
                 }
             })
         }
-        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+        .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 380)
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 modelStatusView
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                recordButton
             }
         }
         .task {
@@ -140,44 +137,6 @@ struct ContentView: View {
         .foregroundStyle(.tertiary)
     }
 
-    private var recordButton: some View {
-        Button {
-            if recordingManager.isRecording {
-                if let result = recordingManager.stopRecording(
-                    sessionStore: sessionStore,
-                    transcriptionEngine: transcriptionEngine,
-                    diarizationManager: diarizationManager,
-                    summarizationEngine: summarizationEngine
-                ) {
-                    selectedSessionID = result.session.id
-                }
-            } else {
-                recordingManager.startRecording(
-                    sessionStore: sessionStore,
-                    transcriptionEngine: transcriptionEngine,
-                    diarizationManager: diarizationManager
-                )
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: recordingManager.isRecording ? "stop.circle.fill" : "record.circle")
-                    .foregroundStyle(recordingManager.isRecording ? Color.primary : Color.red)
-                if recordingManager.isRecording {
-                    Text(formatTime(recordingManager.elapsedTime))
-                        .monospacedDigit()
-                        .font(.caption)
-                }
-            }
-        }
-        .keyboardShortcut("r", modifiers: .command)
-        .disabled(recordingManager.isStarting || (!recordingManager.isRecording && transcriptionEngine.state != .ready))
-    }
-
-    private func formatTime(_ interval: TimeInterval) -> String {
-        let minutes = (Int(interval) % 3600) / 60
-        let seconds = Int(interval) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
 }
 
 extension TranscriptionEngine.State {
