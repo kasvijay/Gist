@@ -129,20 +129,31 @@ final class AudioFileWriter: @unchecked Sendable {
     /// Convert a WAV file to AAC M4A for storage efficiency.
     /// Returns the M4A URL on success. The caller is responsible for deleting the WAV.
     static func convertToAAC(wavURL: URL, m4aURL: URL) async throws -> URL {
+        // Skip conversion for empty or very short WAV files
+        let attrs = try FileManager.default.attributesOfItem(atPath: wavURL.path)
+        let fileSize = attrs[.size] as? UInt64 ?? 0
+        if fileSize <= 44 {
+            throw ConversionError.invalidWAV
+        }
+
         let asset = AVURLAsset(url: wavURL)
+        let duration = try await asset.load(.duration)
+        guard duration.seconds > 0.1 else {
+            throw ConversionError.invalidWAV
+        }
+
         guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
             throw ConversionError.exportSessionFailed
         }
 
-        if #available(macOS 15.0, *) {
-            try await session.export(to: m4aURL, as: .m4a)
-        } else {
-            session.outputURL = m4aURL
-            session.outputFileType = .m4a
-            await session.export()
-            if let error = session.error { throw error }
-            guard session.status == .completed else { throw ConversionError.exportFailed }
-        }
+        session.outputURL = m4aURL
+        session.outputFileType = .m4a
+
+        await session.export()
+
+        if let error = session.error { throw error }
+        guard session.status == .completed else { throw ConversionError.exportFailed }
+
         return m4aURL
     }
 

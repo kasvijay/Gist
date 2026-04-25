@@ -5,29 +5,33 @@ struct SummaryView: View {
     let streamingText: String
     let isLoading: Bool
     var statusMessage: String? = nil
-    let onRegenerate: () -> Void
+    var onRegenerate: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Spacer()
-                    if isLoading, let onCancel {
-                        Button {
-                            onCancel()
-                        } label: {
-                            Label("Stop", systemImage: "stop.circle")
+            VStack(alignment: .leading, spacing: 20) {
+                if onRegenerate != nil || onCancel != nil {
+                    HStack {
+                        Spacer()
+                        if isLoading, let onCancel {
+                            Button {
+                                onCancel()
+                            } label: {
+                                Label("Stop", systemImage: "stop.circle")
+                            }
+                            .controlSize(.small)
                         }
-                        .controlSize(.small)
+                        if let onRegenerate {
+                            Button {
+                                onRegenerate()
+                            } label: {
+                                Label("Regenerate", systemImage: "arrow.clockwise")
+                            }
+                            .controlSize(.small)
+                            .disabled(isLoading)
+                        }
                     }
-                    Button {
-                        onRegenerate()
-                    } label: {
-                        Label("Regenerate", systemImage: "arrow.clockwise")
-                    }
-                    .controlSize(.small)
-                    .disabled(isLoading)
                 }
 
                 if isLoading {
@@ -43,7 +47,8 @@ struct SummaryView: View {
                     emptyState
                 }
             }
-            .padding()
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -80,53 +85,46 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func summaryContent(_ summary: Summary) -> some View {
-        // 1. Overview
+        // 1. Blockquote — use overview text with decorative quote mark
         if let overview = summary.overview, !overview.isEmpty {
-            sectionCard(
-                title: "Overview",
-                icon: "doc.text",
-                color: .blue
-            ) {
-                Text(overview)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            blockquote(overview)
         }
 
-        // 2. Decisions
+        // 2. Overview narrative section
+        if let overview = summary.overview, !overview.isEmpty {
+            sectionHeader(title: "OVERVIEW")
+            Text(overview)
+                .font(.body)
+                .foregroundStyle(.primary.opacity(0.85))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        // 3. Decisions
         if let decisions = summary.decisions, !decisions.isEmpty {
-            sectionCard(
-                title: "Decisions",
-                icon: "checkmark.seal",
-                color: .green
-            ) {
+            sectionHeader(title: "DECISIONS", count: decisions.count, countLabel: "made")
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(decisions, id: \.self) { item in
-                    bulletItem(item)
+                    checkmarkItem(item)
                 }
             }
         }
 
-        // 3. Action Items
+        // 4. Action Items
         if let actions = summary.actionItems, !actions.isEmpty {
-            sectionCard(
-                title: "Action Items",
-                icon: "checklist",
-                color: .orange
-            ) {
+            sectionHeader(title: "ACTION ITEMS", count: actions.count)
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(actions, id: \.self) { item in
-                    bulletItem(item)
+                    actionItem(item)
                 }
             }
         }
 
-        // 4. Key Discussion Points
+        // 5. Key Discussion Points
         if let keyPoints = summary.keyPoints, !keyPoints.isEmpty {
-            sectionCard(
-                title: "Key Discussion Points",
-                icon: "bubble.left.and.bubble.right",
-                color: .purple
-            ) {
+            sectionHeader(title: "KEY DISCUSSION POINTS", count: keyPoints.count)
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(keyPoints, id: \.self) { item in
                     bulletItem(item)
                 }
@@ -143,18 +141,16 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func fallbackContent(_ summary: Summary) -> some View {
-        // Legacy: extract overview as text before first ## header
         let overviewText = extractOverview(from: summary.content)
         if !overviewText.isEmpty {
-            sectionCard(title: "Overview", icon: "doc.text", color: .blue) {
-                Text(overviewText)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            blockquote(overviewText)
+            sectionHeader(title: "OVERVIEW")
+            Text(overviewText)
+                .font(.body)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        // If nothing was parseable at all, show raw content
         if overviewText.isEmpty {
             Text(summary.content)
                 .font(.body)
@@ -163,31 +159,95 @@ struct SummaryView: View {
         }
     }
 
-    // MARK: - Section Card
+    // MARK: - Blockquote
 
-    private func sectionCard<Content: View>(
-        title: String, icon: String, color: Color,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .foregroundStyle(color)
-                    .font(.subheadline)
-                Text(title)
-                    .font(.headline)
-            }
+    private func blockquote(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\u{201C}")
+                .font(.system(size: 48, weight: .bold, design: .serif))
+                .foregroundStyle(Color.secondary.opacity(0.3))
+                .padding(.bottom, -12)
 
-            content()
+            Text(text)
+                .font(.system(size: 14))
+                .foregroundStyle(.primary.opacity(0.8))
+                .lineSpacing(4)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 8)
         }
-        .padding(12)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(color.opacity(0.05))
+        .background(Color(.separatorColor).opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(color.opacity(0.15), lineWidth: 1)
-        )
+    }
+
+    // MARK: - Section Header
+
+    private func sectionHeader(title: String, count: Int? = nil, countLabel: String? = nil) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .tracking(0.8)
+
+            if let count {
+                if let label = countLabel {
+                    Text("\(count) \(label)")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Item Styles
+
+    private func checkmarkItem(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.system(size: 15))
+                .padding(.top, 1)
+            Text(text)
+                .font(.body)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func actionItem(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "circle")
+                .foregroundStyle(.orange)
+                .font(.system(size: 15))
+                .padding(.top, 1)
+            Text(text)
+                .font(.body)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func bulletItem(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\u{2022}")
+                .foregroundStyle(.secondary)
+                .padding(.top, 1)
+            Text(text)
+                .font(.body)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Helpers
@@ -233,15 +293,5 @@ struct SummaryView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private func bulletItem(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("\u{2022}")
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(.body)
-                .textSelection(.enabled)
-        }
     }
 }

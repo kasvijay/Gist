@@ -11,7 +11,7 @@ struct SessionDetailView: View {
     @Binding var selectedSessionID: String?
 
     enum DetailTab { case transcript, summary }
-    @State private var activeTab: DetailTab = .transcript
+    @State private var activeTab: DetailTab = .summary
 
     var onStop: (() -> Void)?
 
@@ -28,6 +28,7 @@ struct SessionDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.textBackgroundColor))
         .onChange(of: selectedSessionID) {
             // Clear stale summary state when switching sessions
             summarizationEngine.currentSummary = nil
@@ -63,117 +64,120 @@ struct SessionDetailView: View {
                 let entry = sessionStore.sessions.first { $0.id == sessionID }
                 let loadedSummary = summarizationEngine.currentSummary ?? sessionStore.loadSummary(for: sessionID)
 
-                // Session header
-                VStack(alignment: .leading, spacing: 6) {
+                // Toolbar row: title + date on left, tabs + regenerate on right
+                HStack(spacing: 12) {
+                    // Session title + abbreviated date
                     Text(entry?.name ?? "Session")
-                        .font(.title2)
-                        .fontWeight(.bold)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
 
                     if let date = entry?.startedAt {
-                        Text(date, format: .dateTime.weekday(.wide).month(.wide).day().year().hour().minute())
-                            .font(.caption)
+                        Text(date, format: .dateTime.weekday(.abbreviated))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                        Text("·")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                        Text(date, format: .dateTime.hour().minute())
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
                     }
 
-                    // Metadata row
-                    HStack(spacing: 14) {
-                        if let duration = entry?.durationSeconds {
-                            Label(formatTime(duration), systemImage: "clock")
-                        }
-                        if let speakers = transcript.speakers, !speakers.isEmpty {
-                            Label("\(speakers.count) speakers", systemImage: "person.2")
-                        }
-                        Label(transcript.model, systemImage: "waveform")
-                        if let actions = loadedSummary?.actionItems, !actions.isEmpty {
-                            Label("\(actions.count) actions", systemImage: "checklist")
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer()
 
-                // Tab bar + action buttons
-                HStack {
-                    Picker("View", selection: $activeTab) {
+                    Picker("", selection: $activeTab) {
                         Text("Summary").tag(DetailTab.summary)
                         Text("Transcript").tag(DetailTab.transcript)
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 200)
 
-                    Spacer()
-
-                    if activeTab == .summary {
-                        Button {
-                            summarizationEngine.currentSummary = nil
-                            summarizationEngine.startSummarization(
-                                transcript: transcript,
-                                transcriptionEngine: transcriptionEngine
-                            ) { summary in
-                                if let summary {
-                                    sessionStore.saveSummary(summary, for: sessionID)
-                                }
+                    Button {
+                        if activeTab != .summary { activeTab = .summary }
+                        summarizationEngine.currentSummary = nil
+                        summarizationEngine.startSummarization(
+                            transcript: transcript,
+                            transcriptionEngine: transcriptionEngine
+                        ) { summary in
+                            if let summary {
+                                sessionStore.saveSummary(summary, for: sessionID)
                             }
-                        } label: {
-                            Label("Regenerate", systemImage: "arrow.clockwise")
                         }
-                        .controlSize(.small)
-                        .disabled(summarizationEngine.isWorking)
-                    } else {
-                        Button {
-                            activeTab = .summary
-                            summarizationEngine.startSummarization(
-                                transcript: transcript,
-                                transcriptionEngine: transcriptionEngine
-                            ) { summary in
-                                if let summary {
-                                    sessionStore.saveSummary(summary, for: sessionID)
-                                }
-                            }
-                        } label: {
-                            Label("Summarize", systemImage: "sparkles")
-                        }
-                        .controlSize(.small)
-                        .disabled(summarizationEngine.isWorking)
+                    } label: {
+                        Label("Regenerate", systemImage: "arrow.clockwise")
+                            .font(.system(size: 12))
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.small)
+                    .disabled(summarizationEngine.isWorking)
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
 
                 Divider()
 
-                switch activeTab {
-                case .transcript:
-                    TranscriptView(transcript: transcript)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .summary:
-                    SummaryView(
-                        summary: summarizationEngine.currentSummary ?? sessionStore.loadSummary(for: sessionID),
-                        streamingText: summarizationEngine.streamingText,
-                        isLoading: summarizationEngine.isWorking,
-                        statusMessage: summarizationEngine.statusMessage,
-                        onRegenerate: {
-                            summarizationEngine.currentSummary = nil
-                            summarizationEngine.startSummarization(
-                                transcript: transcript,
-                                transcriptionEngine: transcriptionEngine
-                            ) { summary in
-                                if let summary {
-                                    sessionStore.saveSummary(summary, for: sessionID)
-                                }
-                            }
-                        },
-                        onCancel: {
-                            summarizationEngine.cancel()
+                // Centered content column
+                VStack(spacing: 0) {
+                    // Session header
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let date = entry?.startedAt {
+                            Text(date, format: .dateTime.weekday(.wide).month(.wide).day().year().hour().minute())
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                                .tracking(0.5)
                         }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                        Text(entry?.name ?? "Session")
+                            .font(.system(size: 24, weight: .bold))
+
+                        // Metadata row
+                        HStack(spacing: 16) {
+                            if let duration = entry?.durationSeconds {
+                                Label(formatTime(duration), systemImage: "clock")
+                            }
+                            if let speakers = transcript.speakers, !speakers.isEmpty {
+                                Label("\(speakers.count) speakers", systemImage: "person.2")
+                            }
+                            Label(transcript.model, systemImage: "waveform")
+                            if let actions = loadedSummary?.actionItems, !actions.isEmpty {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checklist")
+                                    Text("\u{2022} \(actions.count) open actions")
+                                }
+                                .foregroundStyle(.green)
+                                .fontWeight(.medium)
+                            }
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 16)
+                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Content
+                    switch activeTab {
+                    case .transcript:
+                        TranscriptView(transcript: transcript)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    case .summary:
+                        SummaryView(
+                            summary: loadedSummary,
+                            streamingText: summarizationEngine.streamingText,
+                            isLoading: summarizationEngine.isWorking,
+                            statusMessage: summarizationEngine.statusMessage,
+                            onRegenerate: nil,
+                            onCancel: {
+                                summarizationEngine.cancel()
+                            }
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
             } else {
                 // No transcript yet
                 VStack(spacing: 12) {

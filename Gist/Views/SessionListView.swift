@@ -62,21 +62,50 @@ struct SessionListView: View {
                     diarizationManager: diarizationManager
                 )
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.left")
-                        .font(.caption)
+                HStack(spacing: 8) {
+                    Image(systemName: "mic")
+                        .font(.system(size: 11))
+                        .padding(5)
+                        .background(
+                            Circle()
+                                .fill(Color(red: 88/255, green: 132/255, blue: 201/255))
+                        )
                     Text("New recording")
+                        .font(.system(size: 13, weight: .medium))
+                    Spacer()
+                    Text("\u{2318}R")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(Color(red: 88/255, green: 132/255, blue: 201/255))
+                        )
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 68/255, green: 120/255, blue: 210/255),
+                                    Color(red: 48/255, green: 102/255, blue: 189/255),
+                                    Color(red: 36/255, green: 85/255, blue: 168/255)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                )
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.blue)
-            .font(.body)
-            .fontWeight(.medium)
             .keyboardShortcut("r", modifiers: .command)
             .disabled(recordingManager.isRecording || recordingManager.isStarting || transcriptionEngine.state != .ready)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
 
             List(selection: $selectedSessionID) {
                 // Active recording at top
