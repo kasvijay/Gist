@@ -88,13 +88,31 @@ struct SessionDetailView: View {
                             }
                         }
                     } label: {
-                        Label("Regenerate", systemImage: "arrow.clockwise")
-                            .font(.system(size: 12))
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Regenerate")
+                                .font(.system(size: 12.5, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 88/255, green: 132/255, blue: 210/255),
+                                    Color(red: 68/255, green: 110/255, blue: 190/255)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .shadow(color: Color(red: 88/255, green: 132/255, blue: 210/255).opacity(0.3), radius: 3, y: 2)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                     .disabled(summarizationEngine.isWorking || recordingManager.isPipelineRunning)
+                    .opacity(summarizationEngine.isWorking || recordingManager.isPipelineRunning ? 0.5 : 1)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)

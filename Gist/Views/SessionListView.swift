@@ -54,79 +54,115 @@ struct SessionListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // New recording button
-            Button {
-                recordingManager.startRecording(
-                    sessionStore: sessionStore,
-                    transcriptionEngine: transcriptionEngine,
-                    diarizationManager: diarizationManager
-                )
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "mic")
-                        .font(.system(size: 11))
-                        .padding(5)
-                        .background(
+            // Recording button — toggles between New recording / Stop recording
+            if recordingManager.isRecording {
+                Button {
+                    _ = recordingManager.stopRecording(
+                        sessionStore: sessionStore,
+                        transcriptionEngine: transcriptionEngine,
+                        diarizationManager: diarizationManager,
+                        summarizationEngine: summarizationEngine
+                    )
+                } label: {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(.white)
+                            .frame(width: 10, height: 10)
+                        Text("Stop recording")
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        // Pulsing timer badge
+                        HStack(spacing: 4) {
                             Circle()
-                                .fill(Color(red: 88/255, green: 132/255, blue: 201/255))
-                        )
-                    Text("New recording")
-                        .font(.system(size: 13, weight: .medium))
-                    Spacer()
-                    Text("\u{2318}R")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white)
+                                .fill(.white)
+                                .frame(width: 6, height: 6)
+                                .opacity(0.8)
+                            Text(formatTime(recordingManager.elapsedTime))
+                                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        }
                         .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 2)
                         .background(
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color(red: 88/255, green: 132/255, blue: 201/255))
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(.white.opacity(0.22))
                         )
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 68/255, green: 120/255, blue: 210/255),
-                                    Color(red: 48/255, green: 102/255, blue: 189/255),
-                                    Color(red: 36/255, green: 85/255, blue: 168/255)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 220/255, green: 80/255, blue: 60/255),
+                                        Color(red: 190/255, green: 60/255, blue: 45/255)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
                             )
-                        )
-                )
+                            .shadow(color: Color(red: 220/255, green: 80/255, blue: 60/255).opacity(0.35), radius: 6, y: 4)
+                    )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("r", modifiers: .command)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
+            } else {
+                Button {
+                    recordingManager.startRecording(
+                        sessionStore: sessionStore,
+                        transcriptionEngine: transcriptionEngine,
+                        diarizationManager: diarizationManager
+                    )
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "mic")
+                            .font(.system(size: 13, weight: .medium))
+                            .frame(width: 22, height: 22)
+                            .background(
+                                Circle()
+                                    .fill(.white.opacity(0.2))
+                            )
+                        Text("New recording")
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Text("\u{2318}R")
+                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(.white.opacity(0.18))
+                            )
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 88/255, green: 132/255, blue: 210/255),
+                                        Color(red: 68/255, green: 110/255, blue: 190/255)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .shadow(color: Color(red: 88/255, green: 132/255, blue: 210/255).opacity(0.3), radius: 6, y: 4)
+                    )
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(recordingManager.isStarting || recordingManager.isPipelineRunning || transcriptionEngine.state != .ready)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut("r", modifiers: .command)
-            .disabled(recordingManager.isRecording || recordingManager.isStarting || recordingManager.isPipelineRunning || transcriptionEngine.state != .ready)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
 
             List(selection: $selectedSessionID) {
-                // Active recording at top
-                if recordingManager.isRecording {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(.red)
-                            .frame(width: 8, height: 8)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(recordingManager.isPaused ? "Paused" : "Recording...")
-                                .font(.body)
-                                .fontWeight(.medium)
-                            Text(formatTime(recordingManager.elapsedTime))
-                                .font(.caption)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .listRowBackground(Color.red.opacity(0.05))
-                }
-
                 // Grouped sessions
                 ForEach(groupedSessions, id: \.0) { group in
                     Section(group.0) {
