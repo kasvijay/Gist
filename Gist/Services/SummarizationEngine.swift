@@ -258,7 +258,7 @@ final class SummarizationEngine: ObservableObject {
         }
     }
 
-    private func isSummarizationModelCached(_ id: String) -> Bool {
+    func isSummarizationModelCached(_ id: String) -> Bool {
         let cacheDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".cache/huggingface/hub")
             .appendingPathComponent("models--\(id.replacingOccurrences(of: "/", with: "--"))")
@@ -520,6 +520,14 @@ final class SummarizationEngine: ObservableObject {
     private static var hfCacheDir: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".cache/huggingface/hub")
+    }
+
+    /// Unload the summarization model from memory (keeps on-disk cache).
+    func unloadModel() {
+        modelContainer = nil
+        loadedModelID = nil
+        state = .idle
+        logger.info("Summarization model unloaded to free memory")
     }
 
     /// Delete the cached model for the current modelName, then reset state.

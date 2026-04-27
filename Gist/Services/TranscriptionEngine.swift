@@ -121,6 +121,11 @@ final class TranscriptionEngine: ObservableObject {
         return nil
     }
 
+    /// Check if the model files are cached on disk (no download needed).
+    var isModelCached: Bool {
+        findCachedModel(modelName) != nil
+    }
+
     /// Check if the model is loaded and usable.
     var isModelLoaded: Bool {
         worker.whisperKit != nil

@@ -5,12 +5,19 @@ struct SummaryView: View {
     let streamingText: String
     let isLoading: Bool
     var statusMessage: String? = nil
+    var entry: SessionIndex.SessionEntry? = nil
+    var transcript: Transcript? = nil
     var onRegenerate: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                // Session header (inside scroll area for full-width scrolling)
+                if let entry {
+                    sessionHeader
+                }
+
                 if onRegenerate != nil || onCancel != nil {
                     HStack {
                         Spacer()
@@ -47,10 +54,61 @@ struct SummaryView: View {
                     emptyState
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 48)
+            .padding(.top, 28)
+            .padding(.bottom, 60)
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
+    }
+
+    @ViewBuilder
+    private var sessionHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let date = entry?.startedAt {
+                Text(date, format: .dateTime.weekday(.wide).month(.wide).day().year().hour().minute())
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+            }
+
+            Text(entry?.name ?? "Session")
+                .font(.system(size: 24, weight: .bold))
+
+            // Metadata row
+            HStack(spacing: 16) {
+                if let duration = entry?.durationSeconds {
+                    Label(formatDuration(duration), systemImage: "clock")
+                }
+                if let speakers = transcript?.speakers, !speakers.isEmpty {
+                    Label("\(speakers.count) speakers", systemImage: "person.2")
+                }
+                if let model = transcript?.model {
+                    Label(model, systemImage: "waveform")
+                }
+                if let actions = summary?.actionItems, !actions.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checklist")
+                        Text("\u{2022} \(actions.count) open actions")
+                    }
+                    .foregroundStyle(.green)
+                    .fontWeight(.medium)
+                }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+        }
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func formatDuration(_ interval: TimeInterval) -> String {
+        let hours = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        let seconds = Int(interval) % 60
+        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 
     @ViewBuilder

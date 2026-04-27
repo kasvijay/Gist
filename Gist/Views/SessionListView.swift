@@ -187,16 +187,22 @@ struct SessionListView: View {
             }
 
             HStack(spacing: 6) {
-                Text(session.startedAt, format: .dateTime.hour().minute())
-                if let duration = session.durationSeconds {
-                    Text("·")
-                    Text(formatTime(duration))
-                        .monospacedDigit()
-                }
-                if let count = session.segmentCount, count > 0 {
-                    Text("·")
-                    Image(systemName: "text.alignleft")
-                    Text("\(count)")
+                if recordingManager.processingSessionID == session.id {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Processing…")
+                } else {
+                    Text(session.startedAt, format: .dateTime.hour().minute())
+                    if let duration = session.durationSeconds {
+                        Text("·")
+                        Text(formatTime(duration))
+                            .monospacedDigit()
+                    }
+                    if let count = session.segmentCount, count > 0 {
+                        Text("·")
+                        Image(systemName: "text.alignleft")
+                        Text("\(count)")
+                    }
                 }
             }
             .font(.caption)

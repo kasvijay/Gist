@@ -101,67 +101,30 @@ struct SessionDetailView: View {
 
                 Divider()
 
-                // Centered content column
-                VStack(spacing: 0) {
-                    // Session header
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let date = entry?.startedAt {
-                            Text(date, format: .dateTime.weekday(.wide).month(.wide).day().year().hour().minute())
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-                                .tracking(0.5)
+                // Content — scroll area spans full width, content centered inside
+                switch activeTab {
+                case .transcript:
+                    TranscriptView(
+                        transcript: transcript,
+                        entry: entry,
+                        loadedSummary: loadedSummary
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .summary:
+                    SummaryView(
+                        summary: loadedSummary,
+                        streamingText: summarizationEngine.streamingText,
+                        isLoading: summarizationEngine.isWorking,
+                        statusMessage: summarizationEngine.statusMessage,
+                        entry: entry,
+                        transcript: transcript,
+                        onRegenerate: nil,
+                        onCancel: {
+                            summarizationEngine.cancel()
                         }
-
-                        Text(entry?.name ?? "Session")
-                            .font(.system(size: 24, weight: .bold))
-
-                        // Metadata row
-                        HStack(spacing: 16) {
-                            if let duration = entry?.durationSeconds {
-                                Label(formatTime(duration), systemImage: "clock")
-                            }
-                            if let speakers = transcript.speakers, !speakers.isEmpty {
-                                Label("\(speakers.count) speakers", systemImage: "person.2")
-                            }
-                            Label(transcript.model, systemImage: "waveform")
-                            if let actions = loadedSummary?.actionItems, !actions.isEmpty {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "checklist")
-                                    Text("\u{2022} \(actions.count) open actions")
-                                }
-                                .foregroundStyle(.green)
-                                .fontWeight(.medium)
-                            }
-                        }
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 16)
-                    .padding(.bottom, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // Content
-                    switch activeTab {
-                    case .transcript:
-                        TranscriptView(transcript: transcript)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    case .summary:
-                        SummaryView(
-                            summary: loadedSummary,
-                            streamingText: summarizationEngine.streamingText,
-                            isLoading: summarizationEngine.isWorking,
-                            statusMessage: summarizationEngine.statusMessage,
-                            onRegenerate: nil,
-                            onCancel: {
-                                summarizationEngine.cancel()
-                            }
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity)
             } else {
                 // No transcript yet
                 VStack(spacing: 12) {
@@ -259,18 +222,27 @@ struct SessionDetailView: View {
                             .monospacedDigit()
                             .foregroundStyle(.tertiary)
                     }
+                    Text("This may take a moment for long recordings.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else if case .downloading(let m, let progress) = transcriptionEngine.state {
                     ProgressView(value: Double(progress))
                         .frame(width: 220)
                     Text("Downloading \(m)… \(Int(progress * 100))%")
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                    Text("First-time setup — this only happens once.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else if case .loading(let m) = transcriptionEngine.state {
                     ProgressView()
                         .controlSize(.regular)
                     Text("Loading \(m)…")
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                    Text("Preparing the transcription model.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else {
                     ProgressView()
                         .controlSize(.regular)
@@ -285,6 +257,9 @@ struct SessionDetailView: View {
                 Text("Identifying speakers…")
                     .font(.headline)
                     .foregroundStyle(.secondary)
+                Text("Analyzing speaker patterns in the recording.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
 
             case .summarizing:
                 switch summarizationEngine.state {
@@ -294,18 +269,27 @@ struct SessionDetailView: View {
                     Text("Downloading summarization model… \(Int(progress * 100))%")
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                    Text("First-time setup — this only happens once.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 case .loading:
                     ProgressView()
                         .controlSize(.regular)
                     Text("Loading summarization model…")
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                    Text("Preparing the summary model.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 default:
                     ProgressView()
                         .controlSize(.regular)
                     Text("Generating summary…")
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                    Text("Creating an overview of your meeting.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
 
             case .converting:
@@ -314,6 +298,9 @@ struct SessionDetailView: View {
                 Text("Saving audio…")
                     .font(.headline)
                     .foregroundStyle(.secondary)
+                Text("Compressing recording for storage.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
 
             // Step indicator

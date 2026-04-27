@@ -251,6 +251,9 @@ final class RecordingManager: ObservableObject {
                 return
             }
 
+            // Unload WhisperKit — no longer needed
+            transcriptionEngine.unloadModel()
+
             // Step 2: Speaker identification (VBx)
             pipelineStep = .diarizing
             if diarizationManager.method == .vbx {
@@ -270,6 +273,9 @@ final class RecordingManager: ObservableObject {
             ) {
                 sessionStore.saveSummary(summary, for: sessionID)
             }
+
+            // Unload Gemma — no longer needed
+            summarizationEngine.unloadModel()
 
             // Step 5: Convert WAV → M4A (verify before deleting WAV)
             pipelineStep = .converting

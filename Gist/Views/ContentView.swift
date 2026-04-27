@@ -38,7 +38,19 @@ struct ContentView: View {
 
             let stored = UserDefaults.standard.string(forKey: "defaultModel") ?? "large-v3"
             transcriptionEngine.modelName = stored
-            await transcriptionEngine.loadModel()
+
+            // First launch: download model (then unload to free memory)
+            // Subsequent launches: skip — pipeline loads on demand
+            if !transcriptionEngine.isModelCached {
+                await transcriptionEngine.loadModel()
+                transcriptionEngine.unloadModel()
+            }
+
+            // Same for summarization model
+            if !summarizationEngine.isSummarizationModelCached(summarizationEngine.modelName) {
+                await summarizationEngine.loadModel()
+                summarizationEngine.unloadModel()
+            }
 
             // Load diarization method from settings
             let storedMethod = UserDefaults.standard.string(forKey: "diarizationMethod") ?? "vbx"
