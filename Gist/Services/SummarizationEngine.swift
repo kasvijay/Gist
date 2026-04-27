@@ -179,6 +179,10 @@ final class SummarizationEngine: ObservableObject {
     var modelName: String = "mlx-community/gemma-3-4b-it-qat-4bit"
     weak var transcriptionEngine: TranscriptionEngine?
 
+    /// Maximum tokens for the transcript portion of the prompt.
+    /// Conservative limit that keeps total input+output within Metal buffer limits on 8GB Macs.
+    private let maxTranscriptTokens = 5000
+
     var loadedModelReady: Bool {
         modelContainer != nil && loadedModelID == modelName
     }
@@ -322,7 +326,7 @@ final class SummarizationEngine: ObservableObject {
         state = .summarizing
         streamingText = ""
 
-        let prompt = buildPrompt(transcript: transcript)
+        let prompt = await buildPrompt(transcript: transcript, container: container)
 
         do {
             let userInput = UserInput(chat: [
@@ -369,8 +373,8 @@ final class SummarizationEngine: ObservableObject {
 
     // MARK: - Prompt Building
 
-    private func buildPrompt(transcript: Transcript) -> String {
-        let transcriptText = formatTranscript(transcript)
+    private func buildPrompt(transcript: Transcript, container: ModelContainer) async -> String {
+        let transcriptText = await formatTranscriptWithinBudget(transcript, container: container)
 
         return """
         Summarize this meeting transcript using exactly these four sections in this order:
@@ -399,6 +403,68 @@ final class SummarizationEngine: ObservableObject {
             let speaker = segment.speaker ?? "Unknown"
             return "[\(speaker)] \(segment.text)"
         }.joined(separator: "\n")
+    }
+
+    /// Format the transcript, sampling segments evenly across the timeline if needed
+    /// to stay within the token budget for the LLM context window.
+    private func formatTranscriptWithinBudget(_ transcript: Transcript, container: ModelContainer) async -> String {
+        let tokenizer = await container.tokenizer
+
+        // Format all segments
+        let allFormatted = transcript.segments.map { segment -> String in
+            let speaker = segment.speaker ?? "Unknown"
+            return "[\(speaker)] \(segment.text)"
+        }
+
+        // Check if full transcript fits
+        let fullText = allFormatted.joined(separator: "\n")
+        let fullTokenCount = tokenizer.encode(text: fullText, addSpecialTokens: false).count
+
+        if fullTokenCount <= maxTranscriptTokens {
+            logger.info("Transcript fits: \(allFormatted.count) segments, \(fullTokenCount) tokens")
+            return fullText
+        }
+
+        // Over budget — sample evenly across the timeline
+        let avgTokensPerSegment = max(1, fullTokenCount / max(1, allFormatted.count))
+        var targetCount = maxTranscriptTokens / avgTokensPerSegment
+        targetCount = max(1, min(targetCount, allFormatted.count))
+
+        var sampledText = sampleSegmentsEvenly(allFormatted, targetCount: targetCount)
+        var sampledTokenCount = tokenizer.encode(text: sampledText, addSpecialTokens: false).count
+
+        // Refine: shrink until within budget
+        while sampledTokenCount > maxTranscriptTokens && targetCount > 1 {
+            targetCount = max(1, targetCount * 4 / 5)
+            sampledText = sampleSegmentsEvenly(allFormatted, targetCount: targetCount)
+            sampledTokenCount = tokenizer.encode(text: sampledText, addSpecialTokens: false).count
+        }
+
+        let durationMinutes = Int(transcript.durationSeconds / 60)
+        logger.info("Transcript condensed: \(allFormatted.count) segments (\(fullTokenCount) tokens) → \(targetCount) segments (\(sampledTokenCount) tokens), \(durationMinutes) min recording")
+
+        let header = "[Note: This transcript (\(durationMinutes) min, \(allFormatted.count) segments) " +
+                     "was condensed to \(targetCount) evenly-spaced segments to fit context limits.]\n\n"
+        return header + sampledText
+    }
+
+    /// Select `targetCount` segments evenly spaced across the array, always including first and last.
+    private func sampleSegmentsEvenly(_ segments: [String], targetCount: Int) -> String {
+        let count = segments.count
+        guard count > 0 else { return "" }
+        guard targetCount < count else { return segments.joined(separator: "\n") }
+        guard targetCount > 1 else { return segments[0] }
+
+        var indices: [Int] = []
+        let step = Double(count - 1) / Double(targetCount - 1)
+        for i in 0..<targetCount {
+            let idx = min(Int((Double(i) * step).rounded()), count - 1)
+            if indices.last != idx {
+                indices.append(idx)
+            }
+        }
+
+        return indices.map { segments[$0] }.joined(separator: "\n")
     }
 
     // MARK: - Parsing

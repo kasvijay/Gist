@@ -5,6 +5,12 @@ import os
 
 @MainActor
 final class RecordingManager: ObservableObject {
+    // MARK: - Pipeline State
+
+    enum PipelineStep: Equatable {
+        case transcribing, diarizing, summarizing, converting
+    }
+
     @Published var isRecording = false
     @Published var isStarting = false
     @Published var elapsedTime: TimeInterval = 0
@@ -17,22 +23,20 @@ final class RecordingManager: ObservableObject {
     @Published var micLevel: Float = 0
     @Published var systemLevel: Float = 0
     @Published var showConsentAlert = false
+    @Published var pipelineStep: PipelineStep? = nil
+    @Published var processingSessionID: String? = nil
+
+    var isPipelineRunning: Bool { pipelineStep != nil }
 
     private let pipeline = RecordingPipeline()
     private let logger = Logger(subsystem: "com.vijaykas.gist", category: "RecordingManager")
 
     private var timer: Timer?
-    private var partialSaveTimer: Timer?
     private var recordingStart: Date?
     private(set) var lastSession: Session?
-    private var streamingTranscriber: StreamingTranscriber?
-    private var streamingTask: Task<Void, Never>?
+    private var pipelineTask: Task<Void, Never>?
     private var pauseStart: Date?
     private var totalPausedDuration: TimeInterval = 0
-
-    // Weak references for partial save timer
-    private weak var activeSessionStore: SessionStore?
-    private weak var activeTranscriptionEngine: TranscriptionEngine?
 
     // Stashed parameters for consent flow
     private weak var pendingSessionStore: SessionStore?
@@ -42,7 +46,7 @@ final class RecordingManager: ObservableObject {
     // MARK: - Consent Flow
 
     func startRecording(sessionStore: SessionStore, transcriptionEngine: TranscriptionEngine, diarizationManager: DiarizationManager) {
-        guard !isRecording, !isStarting else { return }
+        guard !isRecording, !isStarting, !isPipelineRunning else { return }
         pendingSessionStore = sessionStore
         pendingTranscriptionEngine = transcriptionEngine
         pendingDiarizationManager = diarizationManager
@@ -122,9 +126,6 @@ final class RecordingManager: ObservableObject {
         let session = sessionStore.startSession()
         let audioURL = sessionStore.recordingAudioFileURL(for: session)
 
-        let streamer = transcriptionEngine.makeStreamingTranscriber(sampleRate: 16000)
-        self.streamingTranscriber = streamer
-
         // Pipeline start can block for 1-2s (Core Audio XPC setup) — run off main thread
         let capturedPipeline = pipeline
         Task {
@@ -132,12 +133,8 @@ final class RecordingManager: ObservableObject {
                 try await Task.detached {
                     try capturedPipeline.start(
                         audioURL: audioURL,
-                        streamer: streamer,
-                        onSegmentsUpdated: { [weak transcriptionEngine] confirmed, unconfirmed in
-                            Task { @MainActor in
-                                transcriptionEngine?.updateLiveSegments(confirmed: confirmed, unconfirmed: unconfirmed)
-                            }
-                        }
+                        streamer: nil,
+                        onSegmentsUpdated: { _, _ in }
                     )
                 }.value
 
@@ -168,19 +165,9 @@ final class RecordingManager: ObservableObject {
                 self.isStarting = false
                 self.recordingStart = Date()
                 self.lastSession = session
-                self.activeSessionStore = sessionStore
-                self.activeTranscriptionEngine = transcriptionEngine
                 self.error = nil
                 self.audioDeviceWarning = nil
                 self.startTimer()
-                self.startPartialSaveTimer()
-
-                transcriptionEngine.startStreaming()
-                if let streamer = self.streamingTranscriber {
-                    self.streamingTask = Task.detached {
-                        await streamer.start()
-                    }
-                }
 
                 self.logger.info("Recording started: \(session.id), systemAudio: \(self.systemAudioActive)")
 
@@ -199,61 +186,18 @@ final class RecordingManager: ObservableObject {
         // Finalize pause if active
         if isPaused { resumeRecording() }
 
-        streamingTranscriber?.stop()
-        streamingTask?.cancel()
-        let allSegments = streamingTranscriber?.allSegments() ?? []
-
         pipeline.stop()
         stopTimer()
-        stopPartialSaveTimer()
 
         let duration = elapsedTime
         isRecording = false
         sessionStore.finishSession(duration: duration)
 
-        if var transcript = transcriptionEngine.finalizeStreaming(allSegments: allSegments, duration: duration) {
-            let wavURL = sessionStore.recordingAudioFileURL(for: session)
-            let m4aURL = sessionStore.audioFileURL(for: session)
-            let sessionID = session.id
-            let useVBx = diarizationManager.method == .vbx
-            let shouldSummarize = UserDefaults.standard.object(forKey: "autoSummarize") as? Bool ?? false
+        logger.info("Recording stopped, duration: \(duration)s")
 
-            // Post-recording work (diarization, summarization, conversion) runs off main thread
-            if useVBx {
-                let txEngine = transcriptionEngine
-                Task.detached {
-                    await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: wavURL)
-                    await sessionStore.saveTranscript(transcript, for: session)
-                    if shouldSummarize, let engine = summarizationEngine {
-                        if let summary = await engine.summarize(transcript: transcript, transcriptionEngine: txEngine) {
-                            await sessionStore.saveSummary(summary, for: sessionID)
-                        }
-                    }
-                    await Self.convertAndCleanup(wavURL: wavURL, m4aURL: m4aURL)
-                }
-            } else {
-                diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: wavURL)
-                sessionStore.saveTranscript(transcript, for: session)
-                let txEngine = transcriptionEngine
-                Task.detached {
-                    if shouldSummarize, let engine = summarizationEngine {
-                        if let summary = await engine.summarize(transcript: transcript, transcriptionEngine: txEngine) {
-                            await sessionStore.saveSummary(summary, for: sessionID)
-                        }
-                    }
-                    await Self.convertAndCleanup(wavURL: wavURL, m4aURL: m4aURL)
-                }
-            }
-        }
-
-        logger.info("Recording stopped, duration: \(duration)s, segments: \(allSegments.count)")
-
+        // Reset recording state
         elapsedTime = 0
         recordingStart = nil
-        streamingTranscriber = nil
-        streamingTask = nil
-        activeSessionStore = nil
-        activeTranscriptionEngine = nil
         systemAudioActive = false
         audioDeviceWarning = nil
         isPaused = false
@@ -264,7 +208,77 @@ final class RecordingManager: ObservableObject {
         micLevel = 0
         systemLevel = 0
 
+        // Launch background pipeline: transcribe → diarize → summarize → convert
+        if let summarizationEngine {
+            launchPipeline(
+                session: session,
+                duration: duration,
+                sessionStore: sessionStore,
+                transcriptionEngine: transcriptionEngine,
+                diarizationManager: diarizationManager,
+                summarizationEngine: summarizationEngine
+            )
+        }
+
         return (session, duration)
+    }
+
+    // MARK: - Post-Recording Pipeline
+
+    private func launchPipeline(
+        session: Session,
+        duration: TimeInterval,
+        sessionStore: SessionStore,
+        transcriptionEngine: TranscriptionEngine,
+        diarizationManager: DiarizationManager,
+        summarizationEngine: SummarizationEngine
+    ) {
+        let sessionID = session.id
+        let wavURL = sessionStore.recordingAudioFileURL(for: session)
+        let m4aURL = sessionStore.audioFileURL(for: session)
+
+        processingSessionID = sessionID
+        pipelineStep = .transcribing
+
+        pipelineTask = Task {
+            // Step 1: Full-file transcription
+            guard var transcript = await transcriptionEngine.transcribe(
+                audioPath: wavURL.path,
+                duration: duration
+            ) else {
+                pipelineStep = nil
+                processingSessionID = nil
+                return
+            }
+
+            // Step 2: Speaker identification (VBx)
+            pipelineStep = .diarizing
+            if diarizationManager.method == .vbx {
+                await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: wavURL)
+            } else {
+                await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: wavURL)
+            }
+
+            // Step 3: Save transcript
+            sessionStore.saveTranscript(transcript, for: session)
+
+            // Step 4: Summarize (downloads model if needed)
+            pipelineStep = .summarizing
+            if let summary = await summarizationEngine.summarize(
+                transcript: transcript,
+                transcriptionEngine: transcriptionEngine
+            ) {
+                sessionStore.saveSummary(summary, for: sessionID)
+            }
+
+            // Step 5: Convert WAV → M4A (verify before deleting WAV)
+            pipelineStep = .converting
+            await Self.convertAndCleanup(wavURL: wavURL, m4aURL: m4aURL)
+
+            // Done
+            pipelineStep = nil
+            processingSessionID = nil
+        }
     }
 
     // MARK: - WAV to M4A Conversion
@@ -274,8 +288,13 @@ final class RecordingManager: ObservableObject {
     private static func convertAndCleanup(wavURL: URL, m4aURL: URL) async {
         do {
             _ = try await AudioFileWriter.convertToAAC(wavURL: wavURL, m4aURL: m4aURL)
+            // Verify M4A is playable before deleting the WAV source
+            guard let m4aDuration = await AudioFileWriter.verifyM4A(url: m4aURL), m4aDuration > 0 else {
+                conversionLogger.error("M4A verification failed after conversion, keeping WAV: \(wavURL.lastPathComponent)")
+                return
+            }
             try? FileManager.default.removeItem(at: wavURL)
-            conversionLogger.info("Converted \(wavURL.lastPathComponent) → \(m4aURL.lastPathComponent)")
+            conversionLogger.info("Converted \(wavURL.lastPathComponent) → \(m4aURL.lastPathComponent) (\(String(format: "%.1f", m4aDuration))s)")
         } catch {
             conversionLogger.error("WAV→M4A conversion failed, keeping WAV: \(error.localizedDescription)")
         }
@@ -298,34 +317,4 @@ final class RecordingManager: ObservableObject {
         timer = nil
     }
 
-    // MARK: - Partial Transcript Auto-Save
-
-    private func startPartialSaveTimer() {
-        partialSaveTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.savePartialTranscript()
-            }
-        }
-    }
-
-    private func stopPartialSaveTimer() {
-        partialSaveTimer?.invalidate()
-        partialSaveTimer = nil
-    }
-
-    private func savePartialTranscript() {
-        guard let session = lastSession,
-              let streamer = streamingTranscriber,
-              let store = activeSessionStore,
-              let engine = activeTranscriptionEngine else { return }
-        let segments = streamer.allSegments()
-        guard !segments.isEmpty else { return }
-        let partial = Transcript.from(
-            whisperSegments: segments,
-            duration: elapsedTime,
-            model: engine.modelName,
-            language: "en"
-        )
-        store.savePartialTranscript(partial, for: session)
-    }
 }

@@ -32,12 +32,16 @@ struct ContentView: View {
         .task {
             summarizationEngine.transcriptionEngine = transcriptionEngine
 
-            let stored = UserDefaults.standard.string(forKey: "defaultModel") ?? "large-v3_turbo"
+            // Force-switch all users to best quality models
+            UserDefaults.standard.set("large-v3", forKey: "defaultModel")
+            UserDefaults.standard.set("vbx", forKey: "diarizationMethod")
+
+            let stored = UserDefaults.standard.string(forKey: "defaultModel") ?? "large-v3"
             transcriptionEngine.modelName = stored
             await transcriptionEngine.loadModel()
 
             // Load diarization method from settings
-            let storedMethod = UserDefaults.standard.string(forKey: "diarizationMethod") ?? "lsEend"
+            let storedMethod = UserDefaults.standard.string(forKey: "diarizationMethod") ?? "vbx"
             if let method = DiarizationMethod(rawValue: storedMethod) {
                 diarizationManager.method = method
             }

@@ -40,26 +40,10 @@ struct SessionDetailView: View {
 
     private func savedSessionView(sessionID: String) -> some View {
         VStack(spacing: 0) {
-            if case .transcribing(let progress) = transcriptionEngine.state {
-                // Transcription in progress — full-area feedback
-                let entry = sessionStore.sessions.first { $0.id == sessionID }
-                let duration = entry?.durationSeconds ?? 0
-                let processedSeconds = Double(progress) * duration
-                VStack(spacing: 16) {
-                    Spacer()
-                    ProgressView(value: Double(progress))
-                        .frame(width: 200)
-                    Text("Transcribing… \(Int(progress * 100))%")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                    if duration > 0 {
-                        Text("\(formatTime(processedSeconds)) / \(formatTime(duration))")
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundStyle(.tertiary)
-                    }
-                    Spacer()
-                }
+            if recordingManager.processingSessionID == sessionID,
+               let step = recordingManager.pipelineStep {
+                // Pipeline in progress for this session
+                pipelineProgressView(step: step, sessionID: sessionID)
             } else if let transcript = sessionStore.loadTranscript(for: sessionID) {
                 let entry = sessionStore.sessions.first { $0.id == sessionID }
                 let loadedSummary = summarizationEngine.currentSummary ?? sessionStore.loadSummary(for: sessionID)
@@ -110,7 +94,7 @@ struct SessionDetailView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
                     .controlSize(.small)
-                    .disabled(summarizationEngine.isWorking)
+                    .disabled(summarizationEngine.isWorking || recordingManager.isPipelineRunning)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
@@ -242,11 +226,131 @@ struct SessionDetailView: View {
                                 }
                             }
                             .buttonStyle(.borderedProminent)
+                            .disabled(recordingManager.isPipelineRunning)
                         }
                     }
                     Spacer()
                 }
             }
+        }
+    }
+
+    // MARK: - Pipeline Progress
+
+    private func pipelineProgressView(step: RecordingManager.PipelineStep, sessionID: String) -> some View {
+        let entry = sessionStore.sessions.first { $0.id == sessionID }
+        let duration = entry?.durationSeconds ?? 0
+
+        return VStack(spacing: 24) {
+            Spacer()
+
+            // Step-specific content
+            switch step {
+            case .transcribing:
+                if case .transcribing(let progress) = transcriptionEngine.state {
+                    ProgressView(value: Double(progress))
+                        .frame(width: 220)
+                    Text("Transcribing… \(Int(progress * 100))%")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    if duration > 0 {
+                        Text("\(formatTime(Double(progress) * duration)) / \(formatTime(duration))")
+                            .font(.subheadline)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                    }
+                } else if case .downloading(let m, let progress) = transcriptionEngine.state {
+                    ProgressView(value: Double(progress))
+                        .frame(width: 220)
+                    Text("Downloading \(m)… \(Int(progress * 100))%")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                } else if case .loading(let m) = transcriptionEngine.state {
+                    ProgressView()
+                        .controlSize(.regular)
+                    Text("Loading \(m)…")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ProgressView()
+                        .controlSize(.regular)
+                    Text("Preparing transcription…")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+
+            case .diarizing:
+                ProgressView()
+                    .controlSize(.regular)
+                Text("Identifying speakers…")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+            case .summarizing:
+                switch summarizationEngine.state {
+                case .downloading(let progress):
+                    ProgressView(value: Double(progress))
+                        .frame(width: 220)
+                    Text("Downloading summarization model… \(Int(progress * 100))%")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                case .loading:
+                    ProgressView()
+                        .controlSize(.regular)
+                    Text("Loading summarization model…")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                default:
+                    ProgressView()
+                        .controlSize(.regular)
+                    Text("Generating summary…")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+
+            case .converting:
+                ProgressView()
+                    .controlSize(.regular)
+                Text("Saving audio…")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Step indicator
+            HStack(spacing: 20) {
+                stepIndicator("Transcribe", active: step == .transcribing,
+                              done: step == .diarizing || step == .summarizing || step == .converting)
+                stepIndicator("Speakers", active: step == .diarizing,
+                              done: step == .summarizing || step == .converting)
+                stepIndicator("Summary", active: step == .summarizing,
+                              done: step == .converting)
+                stepIndicator("Save", active: step == .converting, done: false)
+            }
+            .padding(.top, 8)
+
+            Spacer()
+        }
+    }
+
+    private func stepIndicator(_ label: String, active: Bool, done: Bool) -> some View {
+        VStack(spacing: 4) {
+            ZStack {
+                Circle()
+                    .fill(done ? Color.green : (active ? Color.accentColor : Color.secondary.opacity(0.2)))
+                    .frame(width: 24, height: 24)
+                if done {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                } else if active {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 8, height: 8)
+                }
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(active ? .primary : .secondary)
         }
     }
 

@@ -7,11 +7,10 @@ struct SettingsView: View {
     @EnvironmentObject var diarizationManager: DiarizationManager
     @EnvironmentObject var summarizationEngine: SummarizationEngine
 
-    @AppStorage("defaultModel") private var defaultModel = "large-v3_turbo"
+    @AppStorage("defaultModel") private var defaultModel = "large-v3"
     @AppStorage("customModelPath") private var customModelPath = ""
     @AppStorage("summarizationModel") private var summarizationModel = "mlx-community/gemma-3-4b-it-qat-4bit"
-    @AppStorage("diarizationMethod") private var diarizationMethod = "lsEend"
-    @AppStorage("autoSummarize") private var autoSummarize = false
+    @AppStorage("diarizationMethod") private var diarizationMethod = "vbx"
 
     @State private var micPermission: AVAudioApplication.recordPermission = .undetermined
     @State private var systemAudioGranted = false
@@ -145,9 +144,7 @@ struct SettingsView: View {
 
                 summarizationStatusRow
 
-                Toggle("Summarize automatically after recording", isOn: $autoSummarize)
-
-                Text("Used for generating meeting summaries. Downloads from HuggingFace on first use, then runs fully offline.")
+                Text("Used for generating meeting summaries after each recording. Downloads from HuggingFace on first use, then runs fully offline.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

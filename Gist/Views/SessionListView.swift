@@ -103,7 +103,7 @@ struct SessionListView: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(recordingManager.isRecording || recordingManager.isStarting || transcriptionEngine.state != .ready)
+            .disabled(recordingManager.isRecording || recordingManager.isStarting || recordingManager.isPipelineRunning || transcriptionEngine.state != .ready)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
 

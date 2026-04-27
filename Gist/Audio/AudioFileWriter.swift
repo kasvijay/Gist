@@ -157,6 +157,19 @@ final class AudioFileWriter: @unchecked Sendable {
         return m4aURL
     }
 
+    /// Verify an M4A file is valid: exists, non-empty, and has loadable audio duration.
+    /// Returns the M4A duration in seconds, or nil if invalid.
+    static func verifyM4A(url: URL) async -> Double? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = attrs?[.size] as? UInt64 ?? 0
+        guard size > 0 else { return nil }
+        let asset = AVURLAsset(url: url)
+        guard let duration = try? await asset.load(.duration) else { return nil }
+        let seconds = duration.seconds
+        return seconds > 0 ? seconds : nil
+    }
+
     // MARK: - WAV Header Repair (for crash recovery)
 
     /// Repair a WAV file whose RIFF/data chunk sizes are wrong (e.g. process was killed).

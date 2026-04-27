@@ -78,8 +78,13 @@ struct CrashRecovery {
         for entry in conversions {
             do {
                 _ = try await AudioFileWriter.convertToAAC(wavURL: entry.wav, m4aURL: entry.m4a)
+                // Verify M4A is playable before deleting the WAV source
+                guard let m4aDuration = await AudioFileWriter.verifyM4A(url: entry.m4a), m4aDuration > 0 else {
+                    logger.error("M4A verification failed, keeping WAV for: \(entry.sessionID)")
+                    continue
+                }
                 try? FileManager.default.removeItem(at: entry.wav)
-                logger.info("Converted recovered WAV → M4A for: \(entry.sessionID)")
+                logger.info("Converted recovered WAV → M4A for: \(entry.sessionID) (\(String(format: "%.1f", m4aDuration))s)")
             } catch {
                 // Keep the WAV — it's still playable
                 logger.error("Failed to convert recovered WAV for \(entry.sessionID): \(error.localizedDescription)")
