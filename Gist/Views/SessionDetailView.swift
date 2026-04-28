@@ -186,6 +186,10 @@ struct SessionDetailView: View {
                                 let entry = sessionStore.sessions.first { $0.id == sessionID }
                                 let audioURL = URL(fileURLWithPath: audioPath)
                                 Task.detached {
+                                    // Load model if not in memory
+                                    if await !transcriptionEngine.isModelLoaded {
+                                        await transcriptionEngine.loadModel()
+                                    }
                                     if var transcript = await transcriptionEngine.transcribe(
                                         audioPath: audioPath,
                                         duration: entry?.durationSeconds ?? 0

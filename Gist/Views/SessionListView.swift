@@ -290,6 +290,9 @@ struct SessionListView: View {
         guard let audioPath = sessionStore.audioPath(for: session.id) else { return }
         let audioURL = URL(fileURLWithPath: audioPath)
         Task.detached {
+            if await !transcriptionEngine.isModelLoaded {
+                await transcriptionEngine.loadModel()
+            }
             if var transcript = await transcriptionEngine.transcribe(
                 audioPath: audioPath,
                 duration: session.durationSeconds ?? 0
@@ -323,6 +326,9 @@ struct SessionListView: View {
 
         Task.detached {
             if let session = await sessionStore.importAudioFile(from: url) {
+                if await !transcriptionEngine.isModelLoaded {
+                    await transcriptionEngine.loadModel()
+                }
                 let audioPath = await sessionStore.audioFileURL(for: session).path
                 if var transcript = await transcriptionEngine.transcribe(
                     audioPath: audioPath,

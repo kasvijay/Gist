@@ -241,7 +241,12 @@ final class RecordingManager: ObservableObject {
         pipelineStep = .transcribing
 
         pipelineTask = Task {
-            // Step 1: Full-file transcription
+            // Step 1: Load transcription model if not in memory
+            if !transcriptionEngine.isModelLoaded {
+                await transcriptionEngine.loadModel()
+            }
+
+            // Step 2: Full-file transcription
             guard var transcript = await transcriptionEngine.transcribe(
                 audioPath: wavURL.path,
                 duration: duration
