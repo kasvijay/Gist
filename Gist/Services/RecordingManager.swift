@@ -256,8 +256,9 @@ final class RecordingManager: ObservableObject {
                 return
             }
 
-            // Unload WhisperKit — no longer needed
+            // Unload WhisperKit — no longer needed, but keep state ready for next recording
             transcriptionEngine.unloadModel()
+            transcriptionEngine.state = .ready
 
             // Step 2: Speaker identification (VBx)
             pipelineStep = .diarizing
