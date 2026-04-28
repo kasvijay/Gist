@@ -32,9 +32,13 @@ struct ContentView: View {
         .task {
             summarizationEngine.transcriptionEngine = transcriptionEngine
 
-            // Force-switch all users to best quality models
-            UserDefaults.standard.set("large-v3", forKey: "defaultModel")
-            UserDefaults.standard.set("vbx", forKey: "diarizationMethod")
+            // Set defaults for new users only (don't override existing choice)
+            if UserDefaults.standard.string(forKey: "defaultModel") == nil {
+                UserDefaults.standard.set("large-v3", forKey: "defaultModel")
+            }
+            if UserDefaults.standard.string(forKey: "diarizationMethod") == nil {
+                UserDefaults.standard.set("vbx", forKey: "diarizationMethod")
+            }
 
             let stored = UserDefaults.standard.string(forKey: "defaultModel") ?? "large-v3"
             transcriptionEngine.modelName = stored
@@ -44,10 +48,9 @@ struct ContentView: View {
             if !transcriptionEngine.isModelCached {
                 await transcriptionEngine.loadModel()
                 transcriptionEngine.unloadModel()
-            } else {
-                // Model is cached on disk — mark as ready for on-demand loading
-                transcriptionEngine.state = .ready
             }
+            // Always mark ready — model is either cached on disk or just downloaded
+            transcriptionEngine.state = .ready
 
             // Same for summarization model
             if !summarizationEngine.isSummarizationModelCached(summarizationEngine.modelName) {
