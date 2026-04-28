@@ -40,10 +40,13 @@ struct ContentView: View {
             transcriptionEngine.modelName = stored
 
             // First launch: download model (then unload to free memory)
-            // Subsequent launches: skip — pipeline loads on demand
+            // Subsequent launches: skip loading — pipeline loads on demand
             if !transcriptionEngine.isModelCached {
                 await transcriptionEngine.loadModel()
                 transcriptionEngine.unloadModel()
+            } else {
+                // Model is cached on disk — mark as ready for on-demand loading
+                transcriptionEngine.state = .ready
             }
 
             // Same for summarization model
