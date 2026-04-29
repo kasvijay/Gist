@@ -46,7 +46,7 @@ final class RecordingManager: ObservableObject {
     // MARK: - Consent Flow
 
     func startRecording(sessionStore: SessionStore, transcriptionEngine: TranscriptionEngine, diarizationManager: DiarizationManager) {
-        guard !isRecording, !isStarting, !isPipelineRunning else { return }
+        guard !isRecording, !isStarting else { return }
         pendingSessionStore = sessionStore
         pendingTranscriptionEngine = transcriptionEngine
         pendingDiarizationManager = diarizationManager
@@ -237,10 +237,16 @@ final class RecordingManager: ObservableObject {
         let wavURL = sessionStore.recordingAudioFileURL(for: session)
         let m4aURL = sessionStore.audioFileURL(for: session)
 
-        processingSessionID = sessionID
-        pipelineStep = .transcribing
+        // Capture any in-flight pipeline so we can queue behind it
+        let previousTask = pipelineTask
 
         pipelineTask = Task {
+            // Wait for any previously running pipeline to complete
+            await previousTask?.value
+
+            processingSessionID = sessionID
+            pipelineStep = .transcribing
+
             // Step 1: Load transcription model if not in memory
             if !transcriptionEngine.isModelLoaded {
                 await transcriptionEngine.loadModel()
@@ -260,7 +266,7 @@ final class RecordingManager: ObservableObject {
             transcriptionEngine.unloadModel()
             transcriptionEngine.state = .ready
 
-            // Step 2: Speaker identification (VBx)
+            // Step 3: Speaker identification (VBx)
             pipelineStep = .diarizing
             if diarizationManager.method == .vbx {
                 await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: wavURL)
@@ -268,10 +274,10 @@ final class RecordingManager: ObservableObject {
                 await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: wavURL)
             }
 
-            // Step 3: Save transcript
+            // Step 4: Save transcript
             sessionStore.saveTranscript(transcript, for: session)
 
-            // Step 4: Summarize (downloads model if needed)
+            // Step 5: Summarize (downloads model if needed)
             pipelineStep = .summarizing
             if let summary = await summarizationEngine.summarize(
                 transcript: transcript,
@@ -283,7 +289,7 @@ final class RecordingManager: ObservableObject {
             // Unload Gemma — no longer needed
             summarizationEngine.unloadModel()
 
-            // Step 5: Convert WAV → M4A (verify before deleting WAV)
+            // Step 6: Convert WAV → M4A (verify before deleting WAV)
             pipelineStep = .converting
             await Self.convertAndCleanup(wavURL: wavURL, m4aURL: m4aURL)
 
