@@ -30,7 +30,8 @@ struct SessionListView: View {
         var pinned: [SessionIndex.SessionEntry] = []
         var todaySessions: [SessionIndex.SessionEntry] = []
         var yesterdaySessions: [SessionIndex.SessionEntry] = []
-        var earlier: [SessionIndex.SessionEntry] = []
+        // Older sessions grouped by start-of-day date
+        var olderByDate: [Date: [SessionIndex.SessionEntry]] = [:]
 
         for session in filteredSessions {
             if session.isPinned == true {
@@ -40,15 +41,23 @@ struct SessionListView: View {
             } else if calendar.isDate(session.startedAt, inSameDayAs: yesterday) {
                 yesterdaySessions.append(session)
             } else {
-                earlier.append(session)
+                let dayStart = calendar.startOfDay(for: session.startedAt)
+                olderByDate[dayStart, default: []].append(session)
             }
         }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .none
 
         var groups: [(String, [SessionIndex.SessionEntry])] = []
         if !pinned.isEmpty { groups.append(("PINNED", pinned)) }
         if !todaySessions.isEmpty { groups.append(("TODAY", todaySessions)) }
         if !yesterdaySessions.isEmpty { groups.append(("YESTERDAY", yesterdaySessions)) }
-        if !earlier.isEmpty { groups.append(("EARLIER", earlier)) }
+        for day in olderByDate.keys.sorted(by: >) {
+            let title = dateFormatter.string(from: day).uppercased()
+            groups.append((title, olderByDate[day]!))
+        }
         return groups
     }
 
@@ -287,33 +296,13 @@ struct SessionListView: View {
     // MARK: - Actions
 
     private func retranscribe(_ session: SessionIndex.SessionEntry) {
-        guard let audioPath = sessionStore.audioPath(for: session.id) else { return }
-        let audioURL = URL(fileURLWithPath: audioPath)
-        Task.detached {
-            if await !transcriptionEngine.isModelLoaded {
-                await transcriptionEngine.loadModel()
-            }
-            if var transcript = await transcriptionEngine.transcribe(
-                audioPath: audioPath,
-                duration: session.durationSeconds ?? 0
-            ) {
-                if await diarizationManager.method == .vbx {
-                    await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: audioURL)
-                } else {
-                    await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: audioURL)
-                }
-
-                let s = Session(
-                    id: session.id,
-                    name: session.name,
-                    startedAt: session.startedAt,
-                    endedAt: session.endedAt,
-                    durationSeconds: session.durationSeconds,
-                    status: .complete
-                )
-                await sessionStore.saveTranscript(transcript, for: s)
-            }
-        }
+        recordingManager.runPipeline(
+            for: session,
+            sessionStore: sessionStore,
+            transcriptionEngine: transcriptionEngine,
+            diarizationManager: diarizationManager,
+            summarizationEngine: summarizationEngine
+        )
     }
 
     private func importAudio() {

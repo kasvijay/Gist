@@ -293,6 +293,93 @@ final class RecordingManager: ObservableObject {
         }
     }
 
+    // MARK: - Run Pipeline for Existing Session
+
+    /// Run the full post-recording pipeline (transcribe → diarize → summarize → convert)
+    /// for an existing session. Used by "Transcribe Now", "Re-transcribe", and auto-recovery on launch.
+    func runPipeline(
+        for entry: SessionIndex.SessionEntry,
+        sessionStore: SessionStore,
+        transcriptionEngine: TranscriptionEngine,
+        diarizationManager: DiarizationManager,
+        summarizationEngine: SummarizationEngine
+    ) {
+        guard !isPipelineRunning else { return }
+
+        let sessionID = entry.id
+        guard let audioPath = sessionStore.audioPath(for: sessionID) else { return }
+        let audioURL = URL(fileURLWithPath: audioPath)
+
+        let session = Session(
+            id: entry.id, name: entry.name,
+            startedAt: entry.startedAt, endedAt: entry.endedAt,
+            durationSeconds: entry.durationSeconds, status: .complete
+        )
+
+        let wavURL = sessionStore.recordingAudioFileURL(for: session)
+        let m4aURL = sessionStore.audioFileURL(for: session)
+
+        processingSessionID = sessionID
+        pipelineStep = .transcribing
+
+        pipelineTask = Task {
+            // Step 1: Load transcription model if not in memory
+            if !transcriptionEngine.isModelLoaded {
+                await transcriptionEngine.loadModel()
+            }
+
+            // Step 2: Full-file transcription
+            guard var transcript = await transcriptionEngine.transcribe(
+                audioPath: audioPath,
+                duration: entry.durationSeconds ?? 0
+            ) else {
+                pipelineStep = nil
+                processingSessionID = nil
+                return
+            }
+
+            // Unload WhisperKit — no longer needed
+            transcriptionEngine.unloadModel()
+            transcriptionEngine.state = .ready
+
+            // Step 3: Speaker identification
+            pipelineStep = .diarizing
+            if diarizationManager.method == .vbx {
+                await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: audioURL)
+            } else {
+                await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: audioURL)
+            }
+
+            // Step 4: Save transcript
+            sessionStore.saveTranscript(transcript, for: session)
+
+            // Step 5: Summarize
+            pipelineStep = .summarizing
+            if let summary = await summarizationEngine.summarize(
+                transcript: transcript,
+                transcriptionEngine: transcriptionEngine
+            ) {
+                sessionStore.saveSummary(summary, for: sessionID)
+            }
+            summarizationEngine.unloadModel()
+
+            // Step 6: Convert WAV → M4A if WAV still exists
+            if FileManager.default.fileExists(atPath: wavURL.path) {
+                pipelineStep = .converting
+                await Self.convertAndCleanup(wavURL: wavURL, m4aURL: m4aURL)
+            }
+
+            // Done
+            pipelineStep = nil
+            processingSessionID = nil
+        }
+    }
+
+    /// Wait for the current pipeline to finish. Used to sequence multiple pipelines.
+    func waitForPipeline() async {
+        await pipelineTask?.value
+    }
+
     // MARK: - WAV to M4A Conversion
 
     private static let conversionLogger = Logger(subsystem: "com.vijaykas.gist", category: "AudioConversion")

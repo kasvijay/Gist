@@ -181,34 +181,16 @@ struct SessionDetailView: View {
                         Text("No transcript")
                             .font(.headline)
                             .foregroundStyle(.secondary)
-                        if let audioPath = sessionStore.audioPath(for: sessionID) {
+                        if sessionStore.audioPath(for: sessionID) != nil,
+                           let entry = sessionStore.sessions.first(where: { $0.id == sessionID }) {
                             Button("Transcribe Now") {
-                                let entry = sessionStore.sessions.first { $0.id == sessionID }
-                                let audioURL = URL(fileURLWithPath: audioPath)
-                                Task.detached {
-                                    // Load model if not in memory
-                                    if await !transcriptionEngine.isModelLoaded {
-                                        await transcriptionEngine.loadModel()
-                                    }
-                                    if var transcript = await transcriptionEngine.transcribe(
-                                        audioPath: audioPath,
-                                        duration: entry?.durationSeconds ?? 0
-                                    ) {
-                                        if await diarizationManager.method == .vbx {
-                                            await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: audioURL)
-                                        } else {
-                                            await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: audioURL)
-                                        }
-                                        if let entry {
-                                            let s = Session(
-                                                id: entry.id, name: entry.name,
-                                                startedAt: entry.startedAt, endedAt: entry.endedAt,
-                                                durationSeconds: entry.durationSeconds, status: .complete
-                                            )
-                                            await sessionStore.saveTranscript(transcript, for: s)
-                                        }
-                                    }
-                                }
+                                recordingManager.runPipeline(
+                                    for: entry,
+                                    sessionStore: sessionStore,
+                                    transcriptionEngine: transcriptionEngine,
+                                    diarizationManager: diarizationManager,
+                                    summarizationEngine: summarizationEngine
+                                )
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(recordingManager.isPipelineRunning)

@@ -281,6 +281,23 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    // MARK: - Incomplete Session Detection
+
+    /// Find sessions that have audio but no transcript — these need the processing pipeline.
+    func sessionsNeedingProcessing() -> [SessionIndex.SessionEntry] {
+        sessions.filter { entry in
+            !entry.hasTranscript && hasAudioFile(for: entry)
+        }
+    }
+
+    private func hasAudioFile(for entry: SessionIndex.SessionEntry) -> Bool {
+        let folder = baseURL.appendingPathComponent(entry.path)
+        let m4a = folder.appendingPathComponent("audio.m4a")
+        if fileManager.fileExists(atPath: m4a.path) { return true }
+        let wav = folder.appendingPathComponent("audio.wav")
+        return fileManager.fileExists(atPath: wav.path)
+    }
+
     // MARK: - Session Management
 
     func pinSession(id: String) {

@@ -24,6 +24,19 @@ struct GistApp: App {
                         if !conversions.isEmpty {
                             await CrashRecovery.convertPendingRecoveries(conversions)
                         }
+
+                        // Auto-process sessions that have audio but no transcript
+                        let pending = sessionStore.sessionsNeedingProcessing()
+                        for entry in pending {
+                            recordingManager.runPipeline(
+                                for: entry,
+                                sessionStore: sessionStore,
+                                transcriptionEngine: transcriptionEngine,
+                                diarizationManager: diarizationManager,
+                                summarizationEngine: summarizationEngine
+                            )
+                            await recordingManager.waitForPipeline()
+                        }
                     }
                     .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                         // Finalize recording on app quit so audio file is never lost
