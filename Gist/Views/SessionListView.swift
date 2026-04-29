@@ -11,6 +11,7 @@ struct SessionListView: View {
     @State private var renamingSessionID: String?
     @State private var renameText: String = ""
     @State private var searchText: String = ""
+    @State private var collapsedSections: Set<String> = []
     @FocusState private var renameFieldFocused: Bool
 
     private var filteredSessions: [SessionIndex.SessionEntry] {
@@ -172,14 +173,15 @@ struct SessionListView: View {
             }
 
             List(selection: $selectedSessionID) {
-                // Grouped sessions
                 ForEach(groupedSessions, id: \.0) { group in
-                    Section(group.0) {
+                    Section(isExpanded: sectionExpanded(group.0)) {
                         ForEach(group.1) { session in
                             sessionRow(session)
                                 .tag(session.id)
                                 .contextMenu { contextMenu(for: session) }
                         }
+                    } header: {
+                        sectionHeader(title: group.0, count: group.1.count)
                     }
                 }
             }
@@ -198,6 +200,39 @@ struct SessionListView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+            }
+        }
+    }
+
+    // MARK: - Section Header
+
+    private func sectionExpanded(_ title: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsedSections.contains(title) },
+            set: { isExpanded in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    if isExpanded {
+                        collapsedSections.remove(title)
+                    } else {
+                        collapsedSections.insert(title)
+                    }
+                }
+            }
+        )
+    }
+
+    private func sectionHeader(title: String, count: Int) -> some View {
+        HStack(spacing: 0) {
+            Text(title)
+                .font(.system(size: 11, weight: .heavy))
+                .kerning(0.6)
+                .foregroundStyle(.primary.opacity(0.55))
+            Spacer()
+            if collapsedSections.contains(title) {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.tertiary)
+                    .padding(.trailing, 2)
             }
         }
     }
