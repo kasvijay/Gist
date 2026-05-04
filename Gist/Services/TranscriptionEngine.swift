@@ -263,7 +263,14 @@ final class TranscriptionWorker: @unchecked Sendable {
         guard let pipe = whisperKit else { return nil }
         let results = try await pipe.transcribe(
             audioPath: audioPath,
-            decodeOptions: DecodingOptions(usePrefillPrompt: false, detectLanguage: true, wordTimestamps: true),
+            decodeOptions: DecodingOptions(
+                usePrefillPrompt: false,
+                detectLanguage: true,
+                wordTimestamps: true,
+                compressionRatioThreshold: 2.4,
+                logProbThreshold: -1.0,
+                noSpeechThreshold: 0.6
+            ),
             callback: { progress in callback(progress) }
         )
         return results.first

@@ -253,7 +253,14 @@ final class RecordingManager: ObservableObject {
             processingSessionID = sessionID
             pipelineStep = .transcribing
 
-            // Step 1: Load transcription model if not in memory
+            // Use large-v3 (full) for post-recording — better accuracy than turbo
+            let originalModel = transcriptionEngine.modelName
+            let useFullModel = originalModel == "large-v3_turbo"
+            if useFullModel {
+                transcriptionEngine.modelName = "large-v3"
+            }
+
+            // Step 1: Load transcription model if not in memory (or if model changed)
             if !transcriptionEngine.isModelLoaded {
                 await transcriptionEngine.loadModel()
             }
@@ -271,6 +278,9 @@ final class RecordingManager: ObservableObject {
             // Unload WhisperKit — no longer needed, but keep state ready for next recording
             transcriptionEngine.unloadModel()
             transcriptionEngine.state = .ready
+            if useFullModel {
+                transcriptionEngine.modelName = originalModel
+            }
 
             // Step 3: Speaker identification (VBx)
             pipelineStep = .diarizing
@@ -335,6 +345,13 @@ final class RecordingManager: ObservableObject {
         pipelineStep = .transcribing
 
         pipelineTask = Task {
+            // Use large-v3 (full) for post-recording — better accuracy than turbo
+            let originalModel = transcriptionEngine.modelName
+            let useFullModel = originalModel == "large-v3_turbo"
+            if useFullModel {
+                transcriptionEngine.modelName = "large-v3"
+            }
+
             // Step 1: Load transcription model if not in memory
             if !transcriptionEngine.isModelLoaded {
                 await transcriptionEngine.loadModel()
@@ -347,12 +364,16 @@ final class RecordingManager: ObservableObject {
             ) else {
                 pipelineStep = nil
                 processingSessionID = nil
+                if useFullModel { transcriptionEngine.modelName = originalModel }
                 return
             }
 
             // Unload WhisperKit — no longer needed
             transcriptionEngine.unloadModel()
             transcriptionEngine.state = .ready
+            if useFullModel {
+                transcriptionEngine.modelName = originalModel
+            }
 
             // Step 3: Speaker identification
             pipelineStep = .diarizing

@@ -53,7 +53,7 @@ struct Transcript: Codable {
         speakerLabels: [String?]? = nil,
         speakers: [String: Speaker]? = nil
     ) -> Transcript {
-        let segments = whisperSegments.enumerated().map { index, seg in
+        let allSegments = whisperSegments.enumerated().map { index, seg in
             Segment(
                 segmentIndex: index,
                 start: seg.start,
@@ -64,6 +64,14 @@ struct Transcript: Codable {
                 speaker: speakerLabels?[safe: index] ?? nil
             )
         }
+        // Filter hallucinated/empty segments and re-index
+        let segments = allSegments
+            .filter { $0.confidence > 0.3 && !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+            .enumerated()
+            .map { index, seg in
+                Segment(segmentIndex: index, start: seg.start, end: seg.end, text: seg.text,
+                         confidence: seg.confidence, language: seg.language, speaker: seg.speaker)
+            }
         return Transcript(
             created: Date(),
             durationSeconds: duration,

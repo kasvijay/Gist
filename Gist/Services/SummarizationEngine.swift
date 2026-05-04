@@ -373,10 +373,7 @@ final class SummarizationEngine: ObservableObject {
 
     // MARK: - Prompt Building
 
-    private func buildPrompt(transcript: Transcript, container: ModelContainer) async -> String {
-        let transcriptText = await formatTranscriptWithinBudget(transcript, container: container)
-
-        return """
+    private let summaryPromptTemplate = """
         Summarize this meeting transcript using exactly these four sections in this order:
 
         ## Overview
@@ -393,9 +390,11 @@ final class SummarizationEngine: ObservableObject {
         Cover every important point — do not limit the number of bullets.
 
         Use "- " for each bullet. Do not number the sections. Do not add any text outside these sections.
-
-        \(transcriptText)
         """
+
+    private func buildPrompt(transcript: Transcript, container: ModelContainer) async -> String {
+        let transcriptText = await formatTranscriptWithinBudget(transcript, container: container)
+        return summaryPromptTemplate + "\n\n" + transcriptText
     }
 
     func formatTranscript(_ transcript: Transcript) -> String {
@@ -405,8 +404,10 @@ final class SummarizationEngine: ObservableObject {
         }.joined(separator: "\n")
     }
 
-    /// Format the transcript, sampling segments evenly across the timeline if needed
-    /// to stay within the token budget for the LLM context window.
+    /// Format the transcript for the LLM. If it fits within the token budget, use it directly.
+    /// If it's too long, use hierarchical summarization: summarize 10-minute chunks, then
+    /// feed the combined chunk summaries to the final prompt. This preserves all content
+    /// instead of the previous lossy sampling approach.
     private func formatTranscriptWithinBudget(_ transcript: Transcript, container: ModelContainer) async -> String {
         let tokenizer = await container.tokenizer
 
@@ -425,27 +426,95 @@ final class SummarizationEngine: ObservableObject {
             return fullText
         }
 
-        // Over budget — sample evenly across the timeline
-        let avgTokensPerSegment = max(1, fullTokenCount / max(1, allFormatted.count))
-        var targetCount = maxTranscriptTokens / avgTokensPerSegment
-        targetCount = max(1, min(targetCount, allFormatted.count))
+        // Over budget — use hierarchical summarization
+        logger.info("Transcript too long (\(fullTokenCount) tokens, \(allFormatted.count) segments). Using hierarchical summarization.")
 
-        var sampledText = sampleSegmentsEvenly(allFormatted, targetCount: targetCount)
-        var sampledTokenCount = tokenizer.encode(text: sampledText, addSpecialTokens: false).count
+        let chunkSeconds: Double = 600 // 10-minute chunks
+        let chunks = splitIntoTimeChunks(transcript.segments, chunkDuration: chunkSeconds)
+        var chunkSummaries: [String] = []
 
-        // Refine: shrink until within budget
-        while sampledTokenCount > maxTranscriptTokens && targetCount > 1 {
-            targetCount = max(1, targetCount * 4 / 5)
-            sampledText = sampleSegmentsEvenly(allFormatted, targetCount: targetCount)
-            sampledTokenCount = tokenizer.encode(text: sampledText, addSpecialTokens: false).count
+        for (i, chunk) in chunks.enumerated() {
+            if Task.isCancelled { break }
+            let chunkText = chunk.map { seg in
+                let speaker = seg.speaker ?? "Unknown"
+                return "[\(speaker)] \(seg.text)"
+            }.joined(separator: "\n")
+
+            let chunkStart = Int(chunk.first?.start ?? 0) / 60
+            let chunkEnd = Int(chunk.last?.end ?? 0) / 60
+
+            logger.info("Summarizing chunk \(i + 1)/\(chunks.count) (\(chunkStart)-\(chunkEnd) min, \(chunk.count) segments)")
+
+            let chunkSummary = await summarizeChunk(text: chunkText, chunkIndex: i + 1, totalChunks: chunks.count, container: container)
+            if !chunkSummary.isEmpty {
+                chunkSummaries.append("[Minutes \(chunkStart)-\(chunkEnd)]\n\(chunkSummary)")
+            }
         }
 
         let durationMinutes = Int(transcript.durationSeconds / 60)
-        logger.info("Transcript condensed: \(allFormatted.count) segments (\(fullTokenCount) tokens) → \(targetCount) segments (\(sampledTokenCount) tokens), \(durationMinutes) min recording")
+        let header = "[Note: This \(durationMinutes)-minute meeting was summarized in \(chunks.count) chunks to preserve all content.]\n\n"
+        let combined = chunkSummaries.joined(separator: "\n\n")
 
-        let header = "[Note: This transcript (\(durationMinutes) min, \(allFormatted.count) segments) " +
-                     "was condensed to \(targetCount) evenly-spaced segments to fit context limits.]\n\n"
-        return header + sampledText
+        logger.info("Hierarchical summarization: \(chunks.count) chunks → \(tokenizer.encode(text: combined, addSpecialTokens: false).count) tokens")
+        return header + combined
+    }
+
+    /// Split transcript segments into time-based chunks.
+    private func splitIntoTimeChunks(_ segments: [Transcript.Segment], chunkDuration: Double) -> [[Transcript.Segment]] {
+        guard let first = segments.first else { return [] }
+        var chunks: [[Transcript.Segment]] = []
+        var current: [Transcript.Segment] = []
+        var chunkStart = Double(first.start)
+
+        for segment in segments {
+            if Double(segment.start) - chunkStart >= chunkDuration && !current.isEmpty {
+                chunks.append(current)
+                current = []
+                chunkStart = Double(segment.start)
+            }
+            current.append(segment)
+        }
+        if !current.isEmpty {
+            chunks.append(current)
+        }
+        return chunks
+    }
+
+    /// Summarize a single chunk of transcript into concise bullet points.
+    private func summarizeChunk(text: String, chunkIndex: Int, totalChunks: Int, container: ModelContainer) async -> String {
+        let prompt = """
+        List the key points discussed in this portion of the meeting as concise bullet points. \
+        Use "- " for each bullet. Only output bullet points, nothing else.
+
+        \(text)
+        """
+
+        do {
+            let userInput = UserInput(chat: [
+                .system("You extract key points from meeting transcripts. Output only bullet points. Be concise."),
+                .user(prompt),
+            ])
+            let lmInput = try await container.prepare(input: userInput)
+            let parameters = GenerateParameters(
+                maxTokens: 512,
+                temperature: 0.2,
+                topP: 0.9,
+                repetitionPenalty: 1.2
+            )
+
+            var output = ""
+            let stream = try await container.generate(input: lmInput, parameters: parameters)
+            for await generation in stream {
+                if Task.isCancelled { break }
+                if case .chunk(let chunk) = generation {
+                    output += chunk
+                }
+            }
+            return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            logger.error("Chunk \(chunkIndex)/\(totalChunks) summarization failed: \(error)")
+            return ""
+        }
     }
 
     /// Select `targetCount` segments evenly spaced across the array, always including first and last.
