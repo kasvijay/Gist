@@ -132,6 +132,8 @@ struct SettingsView: View {
                 Picker("Model", selection: $summarizationModel) {
                     Text("Gemma 3 4B (3.0GB) — Recommended")
                         .tag("mlx-community/gemma-3-4b-it-qat-4bit")
+                    Text("Gemma 4 E4B (5.2GB)")
+                        .tag("mlx-community/gemma-4-e4b-it-4bit")
                     Text("Phi-4 Mini (2.2GB)")
                         .tag("mlx-community/Phi-4-mini-instruct-4bit")
                     Text("Llama 3.2 3B (1.9GB)")

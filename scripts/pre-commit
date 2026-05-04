@@ -1,0 +1,24 @@
+#!/bin/bash
+# Pre-commit hook: runs test suite before allowing a commit.
+# Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+
+# Only run if Swift source files are staged (skip docs, configs, etc.)
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM | grep '\.swift$' || true)
+if [ -z "$STAGED_SWIFT" ]; then
+    exit 0
+fi
+
+echo "Running tests before commit..."
+
+# Regenerate project in case file list changed
+xcodegen generate --quiet 2>/dev/null
+
+# Run tests
+if ! xcodebuild -scheme Gist -configuration Debug test -destination 'platform=macOS' -quiet 2>&1 | tail -3; then
+    echo ""
+    echo "Tests failed. Commit blocked."
+    echo "Fix the failures and try again."
+    exit 1
+fi
+
+echo "All tests passed."

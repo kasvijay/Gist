@@ -95,6 +95,7 @@ final class SessionStore: ObservableObject {
 
         // Write initial metadata
         writeMetadata(session)
+        updateIndex(session: session)
         currentSession = session
         return session
     }

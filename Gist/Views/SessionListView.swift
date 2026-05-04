@@ -267,7 +267,15 @@ struct SessionListView: View {
             }
 
             HStack(spacing: 6) {
-                if recordingManager.processingSessionID == session.id {
+                if recordingManager.activeSessionID == session.id, recordingManager.isRecording {
+                    Circle()
+                        .fill(Color(red: 220/255, green: 80/255, blue: 60/255))
+                        .frame(width: 6, height: 6)
+                    Text("Recording")
+                    Text("·")
+                    Text(formatTime(recordingManager.elapsedTime))
+                        .monospacedDigit()
+                } else if recordingManager.processingSessionID == session.id {
                     ProgressView()
                         .controlSize(.mini)
                     Text("Processing…")

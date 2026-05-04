@@ -85,7 +85,7 @@ final class TranscriptionEngine: ObservableObject {
 
     /// Detect network/offline errors from WhisperKit/HuggingFace Hub.
     /// These often wrap the real NSURLError several layers deep.
-    private static func isOfflineModelError(_ error: Error) -> Bool {
+    static func isOfflineModelError(_ error: Error) -> Bool {
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain {
             // -1009: not connected, -1020: no internet, -1200: SSL/offline

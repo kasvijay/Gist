@@ -398,7 +398,7 @@ final class SummarizationEngine: ObservableObject {
         """
     }
 
-    private func formatTranscript(_ transcript: Transcript) -> String {
+    func formatTranscript(_ transcript: Transcript) -> String {
         transcript.segments.map { segment in
             let speaker = segment.speaker ?? "Unknown"
             return "[\(speaker)] \(segment.text)"
@@ -449,7 +449,7 @@ final class SummarizationEngine: ObservableObject {
     }
 
     /// Select `targetCount` segments evenly spaced across the array, always including first and last.
-    private func sampleSegmentsEvenly(_ segments: [String], targetCount: Int) -> String {
+    func sampleSegmentsEvenly(_ segments: [String], targetCount: Int) -> String {
         let count = segments.count
         guard count > 0 else { return "" }
         guard targetCount < count else { return segments.joined(separator: "\n") }
@@ -469,7 +469,7 @@ final class SummarizationEngine: ObservableObject {
 
     // MARK: - Parsing
 
-    private func parseSummary(output: String, model: String) -> Summary {
+    func parseSummary(output: String, model: String) -> Summary {
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         let overview = extractParagraph(from: trimmed, header: "## Overview")
         let decisions = extractSection(from: trimmed, header: "## Decisions")
@@ -487,7 +487,7 @@ final class SummarizationEngine: ObservableObject {
         )
     }
 
-    private func extractParagraph(from text: String, header: String) -> String? {
+    func extractParagraph(from text: String, header: String) -> String? {
         guard let headerRange = text.range(of: header) else { return nil }
         let afterHeader = text[headerRange.upperBound...]
 
@@ -498,7 +498,7 @@ final class SummarizationEngine: ObservableObject {
         return section.isEmpty ? nil : section
     }
 
-    private func extractSection(from text: String, header: String) -> [String]? {
+    func extractSection(from text: String, header: String) -> [String]? {
         guard let headerRange = text.range(of: header) else { return nil }
         let afterHeader = text[headerRange.upperBound...]
 

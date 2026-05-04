@@ -17,7 +17,19 @@ struct SessionDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if recordingManager.isRecording {
+            // Compact recording bar — shown when recording AND viewing a different session
+            if recordingManager.isRecording,
+               selectedSessionID != recordingManager.activeSessionID {
+                CompactRecordingBar(
+                    onStop: { onStop?() },
+                    onTapBar: { selectedSessionID = recordingManager.activeSessionID }
+                )
+                Divider()
+            }
+
+            // Main content
+            if recordingManager.isRecording,
+               selectedSessionID == nil || selectedSessionID == recordingManager.activeSessionID {
                 RecordingView {
                     onStop?()
                 }
@@ -111,8 +123,8 @@ struct SessionDetailView: View {
                         .shadow(color: Color(red: 88/255, green: 132/255, blue: 210/255).opacity(0.3), radius: 3, y: 2)
                     }
                     .buttonStyle(.plain)
-                    .disabled(summarizationEngine.isWorking || recordingManager.isPipelineRunning)
-                    .opacity(summarizationEngine.isWorking || recordingManager.isPipelineRunning ? 0.5 : 1)
+                    .disabled(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording)
+                    .opacity(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording ? 0.5 : 1)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
@@ -193,7 +205,7 @@ struct SessionDetailView: View {
                                 )
                             }
                             .buttonStyle(.borderedProminent)
-                            .disabled(recordingManager.isPipelineRunning)
+                            .disabled(recordingManager.isPipelineRunning || recordingManager.isRecording)
                         }
                     }
                     Spacer()

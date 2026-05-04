@@ -82,6 +82,11 @@ struct ContentView: View {
         } message: {
             Text(recordingManager.error ?? "An unknown error occurred.")
         }
+        .onChange(of: recordingManager.activeSessionID) { _, newValue in
+            if let newValue {
+                selectedSessionID = newValue
+            }
+        }
         .alert("Recording Consent", isPresented: $recordingManager.showConsentAlert) {
             Button("Yes") {
                 recordingManager.confirmAndStartRecording()

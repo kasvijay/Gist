@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import UserNotifications
 import WhisperKit
 import os
 
@@ -25,6 +26,7 @@ final class RecordingManager: ObservableObject {
     @Published var showConsentAlert = false
     @Published var pipelineStep: PipelineStep? = nil
     @Published var processingSessionID: String? = nil
+    @Published var activeSessionID: String? = nil
 
     var isPipelineRunning: Bool { pipelineStep != nil }
 
@@ -165,9 +167,11 @@ final class RecordingManager: ObservableObject {
                 self.isStarting = false
                 self.recordingStart = Date()
                 self.lastSession = session
+                self.activeSessionID = session.id
                 self.error = nil
                 self.audioDeviceWarning = nil
                 self.startTimer()
+                self.scheduleRecordingReminders()
 
                 self.logger.info("Recording started: \(session.id), systemAudio: \(self.systemAudioActive)")
 
@@ -188,6 +192,7 @@ final class RecordingManager: ObservableObject {
 
         pipeline.stop()
         stopTimer()
+        cancelRecordingReminders()
 
         let duration = elapsedTime
         isRecording = false
@@ -207,6 +212,7 @@ final class RecordingManager: ObservableObject {
         micDeviceName = "Unknown Microphone"
         micLevel = 0
         systemLevel = 0
+        activeSessionID = nil
 
         // Launch background pipeline: transcribe → diarize → summarize → convert
         if let summarizationEngine {
@@ -422,4 +428,39 @@ final class RecordingManager: ObservableObject {
         timer = nil
     }
 
+    // MARK: - Recording Reminder Notifications
+
+    private static let reminderIdentifier = "com.vijaykas.gist.recording-reminder"
+    private static let reminderInterval: TimeInterval = 30 * 60 // 30 minutes
+
+    private func scheduleRecordingReminders() {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Recording Still Active"
+            content.body = "Gist is still recording. Open the app to stop when you're done."
+            content.sound = .default
+
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: Self.reminderInterval,
+                repeats: true
+            )
+            let request = UNNotificationRequest(
+                identifier: Self.reminderIdentifier,
+                content: content,
+                trigger: trigger
+            )
+            center.add(request) { error in
+                if let error {
+                    self.logger.error("Failed to schedule recording reminder: \(error)")
+                }
+            }
+        }
+    }
+
+    private func cancelRecordingReminders() {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: [Self.reminderIdentifier])
+    }
 }

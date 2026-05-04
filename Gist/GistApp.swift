@@ -64,8 +64,11 @@ struct GistApp: App {
                 .environmentObject(summarizationEngine)
         } label: {
             if recordingManager.isRecording {
-                Image(systemName: "record.circle.fill")
-                    .foregroundStyle(.red)
+                Label {
+                    Text(formatMenuBarTime(recordingManager.elapsedTime))
+                } icon: {
+                    Image(systemName: "record.circle.fill")
+                }
             } else {
                 Image("MenuBarIcon")
             }
@@ -77,5 +80,15 @@ struct GistApp: App {
                 .environmentObject(diarizationManager)
                 .environmentObject(summarizationEngine)
         }
+    }
+
+    private func formatMenuBarTime(_ interval: TimeInterval) -> String {
+        let hours = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        let seconds = Int(interval) % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }

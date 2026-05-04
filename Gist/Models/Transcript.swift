@@ -74,7 +74,7 @@ struct Transcript: Codable {
     }
 
     /// Strip WhisperKit special tokens from segment text.
-    private static func cleanText(_ text: String) -> String {
+    static func cleanText(_ text: String) -> String {
         var cleaned = text
         let pattern = #"<\|[^|]*\|>"#
         if let regex = try? NSRegularExpression(pattern: pattern) {
