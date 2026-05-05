@@ -7,6 +7,7 @@ struct GistApp: App {
     @StateObject private var transcriptionEngine = TranscriptionEngine()
     @StateObject private var diarizationManager = DiarizationManager()
     @StateObject private var summarizationEngine = SummarizationEngine()
+    @StateObject private var audioPlayerService = AudioPlayerService()
     @AppStorage("hasCompletedSetup") private var hasCompletedSetup = false
 
     var body: some Scene {
@@ -18,6 +19,7 @@ struct GistApp: App {
                     .environmentObject(transcriptionEngine)
                     .environmentObject(diarizationManager)
                     .environmentObject(summarizationEngine)
+                    .environmentObject(audioPlayerService)
                     .task {
                         // Convert any recovered WAV files to M4A in the background
                         let conversions = sessionStore.pendingRecoveryConversions
@@ -62,6 +64,7 @@ struct GistApp: App {
                 .environmentObject(transcriptionEngine)
                 .environmentObject(diarizationManager)
                 .environmentObject(summarizationEngine)
+                .environmentObject(audioPlayerService)
         } label: {
             if recordingManager.isRecording {
                 Label {

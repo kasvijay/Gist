@@ -7,6 +7,7 @@ struct SessionDetailView: View {
     @EnvironmentObject var transcriptionEngine: TranscriptionEngine
     @EnvironmentObject var diarizationManager: DiarizationManager
     @EnvironmentObject var summarizationEngine: SummarizationEngine
+    @EnvironmentObject var audioPlayer: AudioPlayerService
 
     @Binding var selectedSessionID: String?
 
@@ -45,6 +46,12 @@ struct SessionDetailView: View {
             // Clear stale summary state when switching sessions
             summarizationEngine.currentSummary = nil
             summarizationEngine.streamingText = ""
+            audioPlayer.stop()
+        }
+        .onChange(of: activeTab) { _, newTab in
+            if newTab != .transcript {
+                audioPlayer.pause()
+            }
         }
     }
 
@@ -137,7 +144,8 @@ struct SessionDetailView: View {
                     TranscriptView(
                         transcript: transcript,
                         entry: entry,
-                        loadedSummary: loadedSummary
+                        loadedSummary: loadedSummary,
+                        audioURL: audioURL(for: sessionID)
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .summary:
@@ -355,6 +363,14 @@ struct SessionDetailView: View {
                 .font(.caption2)
                 .foregroundStyle(active ? .primary : .secondary)
         }
+    }
+
+    // MARK: - Audio URL
+
+    private func audioURL(for sessionID: String) -> URL? {
+        guard let path = sessionStore.audioPath(for: sessionID),
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     // MARK: - Empty State

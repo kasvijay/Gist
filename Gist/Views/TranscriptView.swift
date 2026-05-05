@@ -4,6 +4,9 @@ struct TranscriptView: View {
     let transcript: Transcript
     var entry: SessionIndex.SessionEntry? = nil
     var loadedSummary: Summary? = nil
+    var audioURL: URL? = nil
+
+    @EnvironmentObject var audioPlayer: AudioPlayerService
 
     private let speakerColorPalette: [Color] = [.blue, .green, .orange, .purple, .pink, .cyan, .mint, .indigo, .brown, .teal]
 
@@ -24,27 +27,48 @@ struct TranscriptView: View {
                         .padding(.bottom, 12)
                 }
 
-                ForEach(transcript.segments) { segment in
-                    HStack(alignment: .top, spacing: 12) {
-                        Text(formatTimestamp(segment.start))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 50, alignment: .trailing)
-                            .monospacedDigit()
+                // Waveform player strip
+                if audioURL != nil {
+                    WaveformStripView()
+                        .padding(.bottom, 14)
+                }
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            if let speakerID = segment.speaker,
-                               let speaker = transcript.speakers?[speakerID] {
-                                Text(speaker.label)
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(colorForSpeaker(speakerID))
+                ForEach(transcript.segments) { segment in
+                    HStack(alignment: .top, spacing: 0) {
+                        // Playhead rail
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(isActiveSegment(segment) ? Color.accentColor : Color.clear)
+                            .frame(width: 2)
+                            .padding(.vertical, 2)
+
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(formatTimestamp(segment.start))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 50, alignment: .trailing)
+                                .monospacedDigit()
+                                .onTapGesture {
+                                    audioPlayer.seek(toTime: TimeInterval(segment.start))
+                                    if !audioPlayer.isPlaying {
+                                        audioPlayer.togglePlayback()
+                                    }
+                                }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let speakerID = segment.speaker,
+                                   let speaker = transcript.speakers?[speakerID] {
+                                    Text(speaker.label)
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(colorForSpeaker(speakerID))
+                                }
+                                Text(segment.text)
+                                    .font(.body)
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            Text(segment.text)
-                                .font(.body)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
+                        .padding(.leading, 8)
                     }
                 }
             }
@@ -54,6 +78,18 @@ struct TranscriptView: View {
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
         }
+        .onAppear {
+            if let url = audioURL { audioPlayer.load(url: url) }
+        }
+        .onChange(of: audioURL) { _, newURL in
+            if let url = newURL { audioPlayer.load(url: url) }
+        }
+    }
+
+    private func isActiveSegment(_ segment: Transcript.Segment) -> Bool {
+        guard audioPlayer.isPlaying || audioPlayer.currentTime > 0 else { return false }
+        let time = Float(audioPlayer.currentTime)
+        return time >= segment.start && time < segment.end
     }
 
     @ViewBuilder
