@@ -45,6 +45,18 @@ struct SummaryView: View {
                     loadingView
                 } else if let summary {
                     summaryContent(summary)
+
+                    // Model tag showing which model generated this summary
+                    HStack {
+                        Text("Summarized by")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                        SummaryModelTag(
+                            providerID: ProviderRegistry.shared.defaults.summarizationProviderID,
+                            modelID: summary.model
+                        )
+                    }
+                    .padding(.top, 8)
                 } else if !streamingText.isEmpty {
                     Text(streamingText)
                         .font(.body)

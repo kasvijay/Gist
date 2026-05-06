@@ -187,6 +187,8 @@ struct SessionListView: View {
             }
             .listStyle(.sidebar)
             .searchable(text: $searchText, placement: .sidebar, prompt: "Search sessions...")
+
+            DefaultsBarView()
         }
         .toolbar {
             ToolbarItem(placement: .automatic) {

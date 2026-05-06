@@ -242,6 +242,7 @@ final class RecordingManager: ObservableObject {
         let sessionID = session.id
         let wavURL = sessionStore.recordingAudioFileURL(for: session)
         let m4aURL = sessionStore.audioFileURL(for: session)
+        let registry = ProviderRegistry.shared
 
         // Capture any in-flight pipeline so we can queue behind it
         let previousTask = pipelineTask
@@ -253,57 +254,127 @@ final class RecordingManager: ObservableObject {
             processingSessionID = sessionID
             pipelineStep = .transcribing
 
-            // Use large-v3 (full) for post-recording — better accuracy than turbo
-            let originalModel = transcriptionEngine.modelName
-            let useFullModel = originalModel == "large-v3_turbo"
-            if useFullModel {
-                transcriptionEngine.modelName = "large-v3"
-            }
+            let (transProviderID, transModelID) = registry.activeTranscriptionProviderID()
 
-            // Step 1: Load transcription model if not in memory (or if model changed)
-            if !transcriptionEngine.isModelLoaded {
-                await transcriptionEngine.loadModel()
-            }
+            var transcript: Transcript
 
-            // Step 2: Full-file transcription
-            guard var transcript = await transcriptionEngine.transcribe(
-                audioPath: wavURL.path,
-                duration: duration
-            ) else {
-                pipelineStep = nil
-                processingSessionID = nil
-                return
-            }
-
-            // Unload WhisperKit — no longer needed, but keep state ready for next recording
-            transcriptionEngine.unloadModel()
-            transcriptionEngine.state = .ready
-            if useFullModel {
-                transcriptionEngine.modelName = originalModel
-            }
-
-            // Step 3: Speaker identification (VBx)
-            pipelineStep = .diarizing
-            if diarizationManager.method == .vbx {
-                await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: wavURL)
+            if transProviderID == .localWhisper {
+                // Local path — use existing TranscriptionEngine with model switching
+                let originalModel = transcriptionEngine.modelName
+                let useFullModel = originalModel == "large-v3_turbo"
+                if useFullModel {
+                    transcriptionEngine.modelName = "large-v3"
+                }
+                if !transcriptionEngine.isModelLoaded {
+                    await transcriptionEngine.loadModel()
+                }
+                guard let result = await transcriptionEngine.transcribe(
+                    audioPath: wavURL.path,
+                    duration: duration
+                ) else {
+                    pipelineStep = nil
+                    processingSessionID = nil
+                    return
+                }
+                transcript = result
+                transcriptionEngine.unloadModel()
+                transcriptionEngine.state = .ready
+                if useFullModel {
+                    transcriptionEngine.modelName = originalModel
+                }
             } else {
-                await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: wavURL)
+                // Cloud path — use provider
+                let provider = self.makeTranscriptionProvider(transProviderID, transcriptionEngine: transcriptionEngine)
+                do {
+                    transcript = try await provider.transcribe(
+                        audioURL: wavURL,
+                        modelID: transModelID,
+                        duration: duration,
+                        progress: { _ in }
+                    )
+                } catch {
+                    // Fallback to local if enabled
+                    if registry.defaults.fallbackToLocalOnCloudFailure {
+                        logger.warning("Cloud transcription failed, falling back to local: \(error.localizedDescription)")
+                        if !transcriptionEngine.isModelLoaded {
+                            await transcriptionEngine.loadModel()
+                        }
+                        guard let result = await transcriptionEngine.transcribe(
+                            audioPath: wavURL.path,
+                            duration: duration
+                        ) else {
+                            pipelineStep = nil
+                            processingSessionID = nil
+                            return
+                        }
+                        transcript = result
+                        transcriptionEngine.unloadModel()
+                        transcriptionEngine.state = .ready
+                    } else {
+                        logger.error("Cloud transcription failed: \(error.localizedDescription)")
+                        pipelineStep = nil
+                        processingSessionID = nil
+                        return
+                    }
+                }
+            }
+
+            // Step 3: Speaker identification — skip if provider already includes diarization
+            let providerInfo = ProviderCatalog.provider(for: transProviderID)
+            if providerInfo?.supportsBuiltInDiarization != true {
+                pipelineStep = .diarizing
+                if diarizationManager.method == .vbx {
+                    await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: wavURL)
+                } else {
+                    await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: wavURL)
+                }
             }
 
             // Step 4: Save transcript
             sessionStore.saveTranscript(transcript, for: session)
 
-            // Step 5: Summarize (downloads model if needed)
+            // Step 5: Summarize
             pipelineStep = .summarizing
-            if let summary = await summarizationEngine.summarize(
-                transcript: transcript,
-                transcriptionEngine: transcriptionEngine
-            ) {
-                sessionStore.saveSummary(summary, for: sessionID)
-            }
+            let (sumProviderID, sumModelID) = registry.activeSummarizationProviderID()
 
-            // Unload Gemma — no longer needed
-            summarizationEngine.unloadModel()
+            if sumProviderID == .localMLX {
+                if let summary = await summarizationEngine.summarize(
+                    transcript: transcript,
+                    transcriptionEngine: transcriptionEngine
+                ) {
+                    sessionStore.saveSummary(summary, for: sessionID)
+                }
+                summarizationEngine.unloadModel()
+            } else {
+                let sumProvider = self.makeSummarizationProvider(sumProviderID, summarizationEngine: summarizationEngine)
+                do {
+                    let userPrompt = SummaryPromptBuilder.buildUserPrompt(transcript: transcript)
+                    let summary = try await sumProvider.summarize(
+                        transcript: transcript,
+                        modelID: sumModelID,
+                        systemPrompt: SummaryPromptBuilder.systemPrompt,
+                        userPrompt: userPrompt,
+                        stream: { text in
+                            Task { @MainActor in
+                                summarizationEngine.streamingText = text
+                            }
+                        }
+                    )
+                    sessionStore.saveSummary(summary, for: sessionID)
+                } catch {
+                    logger.error("Cloud summarization failed: \(error.localizedDescription)")
+                    // Fallback to local
+                    if registry.defaults.fallbackToLocalOnCloudFailure {
+                        if let summary = await summarizationEngine.summarize(
+                            transcript: transcript,
+                            transcriptionEngine: transcriptionEngine
+                        ) {
+                            sessionStore.saveSummary(summary, for: sessionID)
+                        }
+                        summarizationEngine.unloadModel()
+                    }
+                }
+            }
 
             // Step 6: Convert WAV → M4A (verify before deleting WAV)
             pipelineStep = .converting
@@ -312,6 +383,33 @@ final class RecordingManager: ObservableObject {
             // Done
             pipelineStep = nil
             processingSessionID = nil
+        }
+    }
+
+    // MARK: - Provider Factory
+
+    private func makeTranscriptionProvider(_ id: ProviderID, transcriptionEngine: TranscriptionEngine) -> any TranscriptionProvider {
+        switch id {
+        case .localWhisper: return LocalWhisperProvider(engine: transcriptionEngine)
+        case .openAIWhisper: return OpenAIWhisperProvider()
+        case .deepgram: return DeepgramProvider()
+        case .assemblyAI: return AssemblyAIProvider()
+        case .groqTranscription: return GroqTranscriptionProvider()
+        case .googleTranscription: return GoogleTranscriptionProvider()
+        default: return LocalWhisperProvider(engine: transcriptionEngine)
+        }
+    }
+
+    private func makeSummarizationProvider(_ id: ProviderID, summarizationEngine: SummarizationEngine) -> any SummarizationProvider {
+        switch id {
+        case .localMLX: return LocalMLXProvider(engine: summarizationEngine)
+        case .anthropic: return AnthropicProvider()
+        case .openAISummarization: return OpenAISummarizationProvider()
+        case .googleGemini: return GoogleGeminiProvider()
+        case .mistral: return MistralProvider()
+        case .ollama: return OllamaProvider()
+        case .groqSummarization: return GroqSummarizationProvider()
+        default: return LocalMLXProvider(engine: summarizationEngine)
         }
     }
 
@@ -331,6 +429,7 @@ final class RecordingManager: ObservableObject {
         let sessionID = entry.id
         guard let audioPath = sessionStore.audioPath(for: sessionID) else { return }
         let audioURL = URL(fileURLWithPath: audioPath)
+        let registry = ProviderRegistry.shared
 
         let session = Session(
             id: entry.id, name: entry.name,
@@ -344,65 +443,131 @@ final class RecordingManager: ObservableObject {
         processingSessionID = sessionID
         pipelineStep = .transcribing
 
+        let (transProviderID, transModelID) = registry.activeTranscriptionProviderID()
+
         pipelineTask = Task {
-            // Use large-v3 (full) for post-recording — better accuracy than turbo
-            let originalModel = transcriptionEngine.modelName
-            let useFullModel = originalModel == "large-v3_turbo"
-            if useFullModel {
-                transcriptionEngine.modelName = "large-v3"
-            }
+            var transcript: Transcript
 
-            // Step 1: Load transcription model if not in memory
-            if !transcriptionEngine.isModelLoaded {
-                await transcriptionEngine.loadModel()
-            }
-
-            // Step 2: Full-file transcription
-            guard var transcript = await transcriptionEngine.transcribe(
-                audioPath: audioPath,
-                duration: entry.durationSeconds ?? 0
-            ) else {
-                pipelineStep = nil
-                processingSessionID = nil
-                if useFullModel { transcriptionEngine.modelName = originalModel }
-                return
-            }
-
-            // Unload WhisperKit — no longer needed
-            transcriptionEngine.unloadModel()
-            transcriptionEngine.state = .ready
-            if useFullModel {
-                transcriptionEngine.modelName = originalModel
-            }
-
-            // Step 3: Speaker identification
-            pipelineStep = .diarizing
-            if diarizationManager.method == .vbx {
-                await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: audioURL)
+            if transProviderID == .localWhisper {
+                let originalModel = transcriptionEngine.modelName
+                let useFullModel = originalModel == "large-v3_turbo"
+                if useFullModel {
+                    transcriptionEngine.modelName = "large-v3"
+                }
+                if !transcriptionEngine.isModelLoaded {
+                    await transcriptionEngine.loadModel()
+                }
+                guard let result = await transcriptionEngine.transcribe(
+                    audioPath: audioPath,
+                    duration: entry.durationSeconds ?? 0
+                ) else {
+                    pipelineStep = nil
+                    processingSessionID = nil
+                    if useFullModel { transcriptionEngine.modelName = originalModel }
+                    return
+                }
+                transcript = result
+                transcriptionEngine.unloadModel()
+                transcriptionEngine.state = .ready
+                if useFullModel {
+                    transcriptionEngine.modelName = originalModel
+                }
             } else {
-                await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: audioURL)
+                let provider = self.makeTranscriptionProvider(transProviderID, transcriptionEngine: transcriptionEngine)
+                do {
+                    transcript = try await provider.transcribe(
+                        audioURL: audioURL,
+                        modelID: transModelID,
+                        duration: entry.durationSeconds ?? 0,
+                        progress: { _ in }
+                    )
+                } catch {
+                    if registry.defaults.fallbackToLocalOnCloudFailure {
+                        logger.warning("Cloud transcription failed, falling back to local: \(error.localizedDescription)")
+                        if !transcriptionEngine.isModelLoaded {
+                            await transcriptionEngine.loadModel()
+                        }
+                        guard let result = await transcriptionEngine.transcribe(
+                            audioPath: audioPath,
+                            duration: entry.durationSeconds ?? 0
+                        ) else {
+                            pipelineStep = nil
+                            processingSessionID = nil
+                            return
+                        }
+                        transcript = result
+                        transcriptionEngine.unloadModel()
+                        transcriptionEngine.state = .ready
+                    } else {
+                        logger.error("Cloud transcription failed: \(error.localizedDescription)")
+                        pipelineStep = nil
+                        processingSessionID = nil
+                        return
+                    }
+                }
             }
 
-            // Step 4: Save transcript
+            // Speaker identification — skip if provider includes diarization
+            let providerInfo = ProviderCatalog.provider(for: transProviderID)
+            if providerInfo?.supportsBuiltInDiarization != true {
+                pipelineStep = .diarizing
+                if diarizationManager.method == .vbx {
+                    await diarizationManager.applySpeakerLabelsAsync(to: &transcript, audioFileURL: audioURL)
+                } else {
+                    await diarizationManager.applySpeakerLabels(to: &transcript, audioFileURL: audioURL)
+                }
+            }
+
             sessionStore.saveTranscript(transcript, for: session)
 
-            // Step 5: Summarize
+            // Summarize
             pipelineStep = .summarizing
-            if let summary = await summarizationEngine.summarize(
-                transcript: transcript,
-                transcriptionEngine: transcriptionEngine
-            ) {
-                sessionStore.saveSummary(summary, for: sessionID)
-            }
-            summarizationEngine.unloadModel()
+            let (sumProviderID, sumModelID) = registry.activeSummarizationProviderID()
 
-            // Step 6: Convert WAV → M4A if WAV still exists
+            if sumProviderID == .localMLX {
+                if let summary = await summarizationEngine.summarize(
+                    transcript: transcript,
+                    transcriptionEngine: transcriptionEngine
+                ) {
+                    sessionStore.saveSummary(summary, for: sessionID)
+                }
+                summarizationEngine.unloadModel()
+            } else {
+                let sumProvider = self.makeSummarizationProvider(sumProviderID, summarizationEngine: summarizationEngine)
+                do {
+                    let userPrompt = SummaryPromptBuilder.buildUserPrompt(transcript: transcript)
+                    let summary = try await sumProvider.summarize(
+                        transcript: transcript,
+                        modelID: sumModelID,
+                        systemPrompt: SummaryPromptBuilder.systemPrompt,
+                        userPrompt: userPrompt,
+                        stream: { text in
+                            Task { @MainActor in
+                                summarizationEngine.streamingText = text
+                            }
+                        }
+                    )
+                    sessionStore.saveSummary(summary, for: sessionID)
+                } catch {
+                    logger.error("Cloud summarization failed: \(error.localizedDescription)")
+                    if registry.defaults.fallbackToLocalOnCloudFailure {
+                        if let summary = await summarizationEngine.summarize(
+                            transcript: transcript,
+                            transcriptionEngine: transcriptionEngine
+                        ) {
+                            sessionStore.saveSummary(summary, for: sessionID)
+                        }
+                        summarizationEngine.unloadModel()
+                    }
+                }
+            }
+
+            // Convert WAV → M4A if WAV still exists
             if FileManager.default.fileExists(atPath: wavURL.path) {
                 pipelineStep = .converting
                 await Self.convertAndCleanup(wavURL: wavURL, m4aURL: m4aURL)
             }
 
-            // Done
             pipelineStep = nil
             processingSessionID = nil
         }

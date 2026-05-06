@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var isDownloadingSummarization = false
     @State private var cachedModelList: [(id: String, displayName: String, size: UInt64, isActive: Bool)] = []
     @State private var modelToDelete: String?
+    @State private var showModelsSheet = false
 
     private let availableModels = [
         ("tiny", "Tiny (39MB)", "Quick test — gets the gist, misses details"),
@@ -29,6 +30,12 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Models & Providers") {
+                Button("Configure Cloud & Local Models...") {
+                    showModelsSheet = true
+                }
+            }
+
             Section("Transcription") {
                 Picker("Default Model", selection: $defaultModel) {
                     ForEach(availableModels, id: \.0) { model in
@@ -222,6 +229,9 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 500, height: 700)
+        .sheet(isPresented: $showModelsSheet) {
+            ModelsSettingsSheet()
+        }
         .onAppear { refreshPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshPermissions()
