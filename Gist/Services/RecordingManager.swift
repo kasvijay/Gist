@@ -391,6 +391,7 @@ final class RecordingManager: ObservableObject {
     private func makeTranscriptionProvider(_ id: ProviderID, transcriptionEngine: TranscriptionEngine) -> any TranscriptionProvider {
         switch id {
         case .localWhisper: return LocalWhisperProvider(engine: transcriptionEngine)
+        case .localParakeet: return LocalParakeetProvider()
         case .openAIWhisper: return OpenAIWhisperProvider()
         case .deepgram: return DeepgramProvider()
         case .assemblyAI: return AssemblyAIProvider()

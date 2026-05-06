@@ -24,6 +24,7 @@
 		20D57B6871FE8B0832ACF659 /* DeepgramProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 009DE71CED3D17C345C52299 /* DeepgramProvider.swift */; };
 		2224FEE637DF7A525966BD4A /* LiveTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13AB54FDE980F784A38FEF7D /* LiveTranscriptView.swift */; };
 		2527B2B24D1E0A0CEFEFDD59 /* ModelsSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FC50A0A1A56DDF0AAF2F575 /* ModelsSettingsSheet.swift */; };
+		2A51C0911C020F0C55C4061F /* LocalParakeetProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4BFBC1FE1A54C46F359299 /* LocalParakeetProvider.swift */; };
 		2BB056E44AD524CFAE9A61A2 /* AudioMixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A017FA2FE81453EEEC35F34E /* AudioMixer.swift */; };
 		34A5C2E0F5C3B79F3B2CEBA9 /* TranscriptionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EFE9DE74710ED771279941F /* TranscriptionEngineTests.swift */; };
 		35AAE2F2B552E8C4BB3A5272 /* ProviderProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B32EA00CF4EF34D5BAEB7359 /* ProviderProtocol.swift */; };
@@ -111,6 +112,7 @@
 		012A87ACADF488A49072CEF8 /* ProviderDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderDefinitions.swift; sourceTree = "<group>"; };
 		0DA21153850CA822DB51DA31 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0EFE9DE74710ED771279941F /* TranscriptionEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngineTests.swift; sourceTree = "<group>"; };
+		0F4BFBC1FE1A54C46F359299 /* LocalParakeetProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalParakeetProvider.swift; sourceTree = "<group>"; };
 		110A7978321B4497B5C27107 /* MistralProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MistralProvider.swift; sourceTree = "<group>"; };
 		114AE29BF24A0327CAC87208 /* SummaryPromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryPromptBuilder.swift; sourceTree = "<group>"; };
 		126DC9C126BF87259AC2A78F /* AudioWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioWaveformView.swift; sourceTree = "<group>"; };
@@ -378,6 +380,7 @@
 				009DE71CED3D17C345C52299 /* DeepgramProvider.swift */,
 				CEDE70D619445A82F9320CF8 /* GoogleTranscriptionProvider.swift */,
 				49067E866AB18CDEF17BD5C4 /* GroqTranscriptionProvider.swift */,
+				0F4BFBC1FE1A54C46F359299 /* LocalParakeetProvider.swift */,
 				75BB26BB3A4D73620C3C6F31 /* LocalWhisperProvider.swift */,
 				C91EFCE5D64E282C8C6F6F43 /* OpenAIWhisperProvider.swift */,
 			);
@@ -594,6 +597,7 @@
 				395D19D3F4C017866499D727 /* KeychainService.swift in Sources */,
 				2224FEE637DF7A525966BD4A /* LiveTranscriptView.swift in Sources */,
 				1D8DF638CED91751423EB97F /* LocalMLXProvider.swift in Sources */,
+				2A51C0911C020F0C55C4061F /* LocalParakeetProvider.swift in Sources */,
 				6863B6D4076D6061DB80A46F /* LocalWhisperProvider.swift in Sources */,
 				72490D0467AE58D8FA23D4C6 /* MLDiarizer.swift in Sources */,
 				059B29ABBD00205FB46BA03D /* MenuBarView.swift in Sources */,

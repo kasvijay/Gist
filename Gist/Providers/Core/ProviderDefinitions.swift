@@ -5,6 +5,7 @@ import SwiftUI
 enum ProviderID: String, Codable, CaseIterable, Identifiable {
     // Transcription
     case localWhisper
+    case localParakeet
     case openAIWhisper
     case deepgram
     case assemblyAI
@@ -27,6 +28,7 @@ extension ProviderID {
     var displayName: String {
         switch self {
         case .localWhisper: return "Whisper (Local)"
+        case .localParakeet: return "Parakeet (Local)"
         case .openAIWhisper: return "OpenAI Whisper"
         case .deepgram: return "Deepgram"
         case .assemblyAI: return "AssemblyAI"
@@ -114,6 +116,19 @@ enum ProviderCatalog {
                 ModelInfo(id: "small", displayName: "small", tier: .fast, speedDescription: "12\u{00D7} realtime", costDescription: nil, contextWindow: nil, sizeGB: "244 MB", features: nil),
             ],
             supportsBuiltInDiarization: false, isDefault: true
+        ),
+        ProviderInfo(
+            id: .localParakeet, name: "Parakeet (Local)", vendor: "NVIDIA \u{00B7} on-device",
+            capability: .transcription, privacy: .onDevice,
+            requiresAPIKey: false, keychainAccount: nil,
+            markColor: Color(red: 0.46, green: 0.72, blue: 0.0),
+            markTextColor: .white,
+            markLetter: "P", docsURL: nil,
+            models: [
+                ModelInfo(id: "parakeet-v3", displayName: "Parakeet TDT v3", tier: .best, speedDescription: "120\u{00D7} realtime", costDescription: nil, contextWindow: nil, sizeGB: "300 MB", features: ["25 languages"]),
+                ModelInfo(id: "parakeet-v2", displayName: "Parakeet TDT v2", tier: .balanced, speedDescription: "110\u{00D7} realtime", costDescription: nil, contextWindow: nil, sizeGB: "300 MB", features: ["English"]),
+            ],
+            supportsBuiltInDiarization: false, isDefault: false
         ),
         ProviderInfo(
             id: .openAIWhisper, name: "OpenAI Whisper", vendor: "OpenAI",
