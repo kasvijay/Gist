@@ -7,6 +7,12 @@ import os
 /// Handles all audio thread work outside of @MainActor.
 /// Owns mic capture, system audio capture, mixing, and file writing.
 /// RecordingManager delegates to this class and only holds @Published UI state.
+/// Pre-allocated buffer holder for mixed output — class wrapper so
+/// @Sendable closures capture a let reference, not a mutable var.
+final class MixBufferHolder: @unchecked Sendable {
+    var buffer: AVAudioPCMBuffer?
+}
+
 final class RecordingPipeline: @unchecked Sendable {
     private let mic = MicrophoneCapture()
     private let systemCapture = SystemAudioCapture()
@@ -105,11 +111,6 @@ final class RecordingPipeline: @unchecked Sendable {
         let capturedState = state
         let capturedStreamer = streamer
 
-        // Pre-allocated buffer holder for mixed output — class wrapper so the
-        // @Sendable closure captures a let reference, not a mutable var.
-        class MixBufferHolder: @unchecked Sendable {
-            var buffer: AVAudioPCMBuffer?
-        }
         let mixHolder = MixBufferHolder()
 
         // Start mic with mixing
@@ -165,13 +166,20 @@ final class RecordingPipeline: @unchecked Sendable {
                         } else {
                             capturedWriter.append(buffer: buffer)
                         }
-                    } else if !micMuted {
+                    } else if micMuted {
+                        // Muted but no system samples yet — write silence to maintain timeline
+                        Self.writeSilence(from: buffer, mixHolder: mixHolder, writer: capturedWriter)
+                    } else {
                         capturedWriter.append(buffer: buffer)
                     }
-                } else if !micMuted {
+                } else if micMuted {
+                    Self.writeSilence(from: buffer, mixHolder: mixHolder, writer: capturedWriter)
+                } else {
                     capturedWriter.append(buffer: buffer)
                 }
-            } else if !micMuted {
+            } else if micMuted {
+                Self.writeSilence(from: buffer, mixHolder: mixHolder, writer: capturedWriter)
+            } else {
                 capturedWriter.append(buffer: buffer)
             }
         }
@@ -218,6 +226,32 @@ final class RecordingPipeline: @unchecked Sendable {
         _levelCallbackCount = 0
         _lastSystemRMS = 0
         controlLock.unlock()
+    }
+
+    // MARK: - Silent Buffer Helper
+
+    /// Write a zeroed buffer to maintain audio timeline when mic is muted
+    /// and no system samples are available. Prevents frame drops with Bluetooth audio.
+    private static func writeSilence(from sourceBuffer: AVAudioPCMBuffer, mixHolder: MixBufferHolder, writer: AudioFileWriter) {
+        let frameCount = sourceBuffer.frameLength
+        let outBuf: AVAudioPCMBuffer
+        if let existing = mixHolder.buffer, existing.frameCapacity >= frameCount {
+            outBuf = existing
+        } else if let created = AVAudioPCMBuffer(pcmFormat: sourceBuffer.format, frameCapacity: frameCount) {
+            mixHolder.buffer = created
+            outBuf = created
+        } else {
+            return
+        }
+        outBuf.frameLength = frameCount
+        if let ch = outBuf.floatChannelData {
+            let byteCount = Int(frameCount) * MemoryLayout<Float>.size
+            memset(ch[0], 0, byteCount)
+            for c in 1..<Int(outBuf.format.channelCount) {
+                memset(ch[c], 0, byteCount)
+            }
+        }
+        writer.append(buffer: outBuf)
     }
 
     // MARK: - Audio Device Change Monitoring
