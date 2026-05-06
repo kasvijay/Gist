@@ -237,6 +237,7 @@ struct ModelsSettingsSheet: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(isSelected ? Color(.controlBackgroundColor) : Color.clear)
@@ -372,6 +373,7 @@ struct ModelsSettingsSheet: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
+            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 9)
                     .fill(isSelected ? Color.accentColor.opacity(0.05) : Color.clear)
