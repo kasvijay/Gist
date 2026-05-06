@@ -37,50 +37,66 @@ struct SettingsView: View {
             }
 
             Section("Transcription") {
-                Picker("Default Model", selection: $defaultModel) {
-                    ForEach(availableModels, id: \.0) { model in
-                        VStack(alignment: .leading) {
-                            Text(model.1)
-                            Text(model.2)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                let registry = ProviderRegistry.shared
+                let activeProvider = ProviderCatalog.provider(for: registry.defaults.transcriptionProviderID)
+                let activeModel = activeProvider?.models.first { $0.id == registry.defaults.transcriptionModelID }
+
+                HStack {
+                    Text("Provider")
+                    Spacer()
+                    HStack(spacing: 6) {
+                        if let p = activeProvider {
+                            ProviderMarkView(provider: p, size: 18)
                         }
-                        .tag(model.0)
-                    }
-                }
-                .onChange(of: defaultModel) {
-                    if defaultModel != "custom" {
-                        transcriptionEngine.modelName = defaultModel
-                        transcriptionEngine.customModelFolder = nil
-                        Task { await transcriptionEngine.loadModel() }
+                        Text(activeProvider?.name ?? "Unknown")
+                            .foregroundStyle(.secondary)
                     }
                 }
 
-                modelStatusRow
-
-                if defaultModel == "custom" {
-                    HStack {
-                        TextField("Model folder path", text: $customModelPath)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Browse...") {
-                            browseForModelFolder()
-                        }
-                    }
-                    .onChange(of: customModelPath) {
-                        if !customModelPath.isEmpty {
-                            transcriptionEngine.customModelFolder = customModelPath
-                            transcriptionEngine.modelName = "custom"
-                        }
-                    }
-
-                    Text("Point to a folder containing compiled Core ML models (.mlmodelc files). Convert Whisper models with [whisperkittools](https://github.com/argmaxinc/whisperkittools).")
-                        .font(.caption)
+                HStack {
+                    Text("Model")
+                    Spacer()
+                    Text(activeModel?.displayName ?? registry.defaults.transcriptionModelID)
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Models download from HuggingFace on first use. Cache: ~/.cache/huggingface/hub/")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let speed = activeModel?.speedDescription {
+                    HStack {
+                        Text("Speed")
+                        Spacer()
+                        Text(speed)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Button("Change Provider or Model...") {
+                    showModelsSheet = true
+                }
+
+                // Show WhisperKit-specific options only when Whisper is active
+                if registry.defaults.transcriptionProviderID == .localWhisper {
+                    modelStatusRow
+
+                    if defaultModel == "custom" {
+                        HStack {
+                            TextField("Model folder path", text: $customModelPath)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                browseForModelFolder()
+                            }
+                        }
+                        .onChange(of: customModelPath) {
+                            if !customModelPath.isEmpty {
+                                transcriptionEngine.customModelFolder = customModelPath
+                                transcriptionEngine.modelName = "custom"
+                            }
+                        }
+                    }
+
+                    Text("Models download on first use. Cache: ~/.cache/huggingface/hub/")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Permissions") {
