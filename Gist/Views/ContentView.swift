@@ -44,11 +44,13 @@ struct ContentView: View {
             let stored = UserDefaults.standard.string(forKey: "defaultModel") ?? "large-v3"
             transcriptionEngine.modelName = stored
 
-            // Pre-download Parakeet model if it's the default provider
+            // Pre-download and compile Parakeet model in background
             if ProviderRegistry.shared.defaults.transcriptionProviderID == .localParakeet {
-                let cacheDir = AsrModels.defaultCacheDirectory(for: .v3)
-                if !AsrModels.modelsExist(at: cacheDir, version: .v3) {
-                    _ = try? await AsrModels.downloadAndLoad(version: .v3)
+                Task.detached(priority: .utility) {
+                    let cacheDir = AsrModels.defaultCacheDirectory(for: .v3)
+                    if !AsrModels.modelsExist(at: cacheDir, version: .v3) {
+                        _ = try? await AsrModels.downloadAndLoad(version: .v3)
+                    }
                 }
             }
 
