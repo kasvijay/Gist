@@ -15,6 +15,7 @@ struct SessionDetailView: View {
     @State private var activeTab: DetailTab = .summary
     @State private var showRegenerateConfirm = false
     @State private var showRetranscribeConfirm = false
+    @State private var summarizingSessionID: String?
 
     var onStop: (() -> Void)?
 
@@ -148,8 +149,8 @@ struct SessionDetailView: View {
                 case .summary:
                     SummaryView(
                         summary: loadedSummary,
-                        streamingText: summarizationEngine.streamingText,
-                        isLoading: summarizationEngine.isWorking,
+                        streamingText: summarizingSessionID == sessionID ? summarizationEngine.streamingText : "",
+                        isLoading: summarizingSessionID == sessionID && summarizationEngine.isWorking,
                         statusMessage: summarizationEngine.statusMessage,
                         entry: entry,
                         transcript: transcript,
@@ -233,15 +234,17 @@ struct SessionDetailView: View {
                         }
                         if activeTab != .summary { activeTab = .summary }
                         summarizationEngine.currentSummary = nil
+                        summarizingSessionID = sessionID
 
                         if providerID == .localMLX {
                             summarizationEngine.startSummarization(
                                 transcript: transcript,
                                 transcriptionEngine: transcriptionEngine
-                            ) { summary in
+                            ) { [self] summary in
                                 if let summary {
                                     sessionStore.saveSummary(summary, for: sessionID)
                                 }
+                                summarizingSessionID = nil
                             }
                         } else {
                             Task {
@@ -264,6 +267,7 @@ struct SessionDetailView: View {
                                 } catch {
                                     summarizationEngine.streamingText = "Error: \(error.localizedDescription)"
                                 }
+                                summarizingSessionID = nil
                             }
                         }
                     },
