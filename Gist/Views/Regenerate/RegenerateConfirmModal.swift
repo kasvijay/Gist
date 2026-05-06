@@ -177,6 +177,7 @@ struct RegenerateConfirmModal: View {
                 .padding(.vertical, 14)
             }
             .frame(width: 520)
+            .frame(maxHeight: 540)
             .background(Color(.windowBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.3), radius: 32, y: 16)
