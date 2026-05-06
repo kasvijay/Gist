@@ -200,53 +200,68 @@ struct RetranscribeConfirmModal: View {
 
             Divider()
 
+            // Model list grouped by On-device / Cloud
             ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(filteredModels, id: \.model.id) { item in
-                        let isSelected = item.model.id == selectedModelID && item.provider.id == selectedProviderID
-                        Button {
-                            selectedProviderID = item.provider.id
-                            selectedModelID = item.model.id
-                            showModelPicker = false
-                            searchQuery = ""
-                        } label: {
-                            HStack(spacing: 10) {
-                                MiniProviderMark(providerID: item.provider.id, size: 22)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    HStack(spacing: 6) {
-                                        Text(item.model.displayName)
-                                            .font(.system(size: 13, weight: .medium))
-                                        if item.provider.requiresAPIKey && !ProviderRegistry.shared.isConnected(item.provider.id) {
-                                            Text("KEY")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .padding(.horizontal, 5)
-                                                .padding(.vertical, 1)
-                                                .background(Color.orange.opacity(0.15))
-                                                .foregroundStyle(.orange)
-                                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                VStack(alignment: .leading, spacing: 0) {
+                    let groups = groupedModels
+                    ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                        Text(group.title)
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(0.08 * 10)
+                            .textCase(.uppercase)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 10)
+                            .padding(.bottom, 4)
+
+                        ForEach(group.items, id: \.model.id) { item in
+                            let isSelected = item.model.id == selectedModelID && item.provider.id == selectedProviderID
+                            let needsKey = item.provider.requiresAPIKey && !ProviderRegistry.shared.isConnected(item.provider.id)
+                            Button {
+                                if !needsKey {
+                                    selectedProviderID = item.provider.id
+                                    selectedModelID = item.model.id
+                                    showModelPicker = false
+                                    searchQuery = ""
+                                }
+                            } label: {
+                                HStack(spacing: 10) {
+                                    MiniProviderMark(providerID: item.provider.id, size: 22)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        HStack(spacing: 6) {
+                                            Text(item.model.displayName)
+                                                .font(.system(size: 13, weight: .medium))
+                                            if needsKey {
+                                                Text("KEY NEEDED")
+                                                    .font(.system(size: 9, weight: .semibold))
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 1)
+                                                    .background(Color.orange.opacity(0.15))
+                                                    .foregroundStyle(.orange)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                            }
+                                        }
+                                        if let speed = item.model.speedDescription {
+                                            Text(speed)
+                                                .font(.system(size: 11, design: .monospaced))
+                                                .foregroundStyle(.secondary)
                                         }
                                     }
-                                    if let speed = item.model.speedDescription {
-                                        Text(speed)
-                                            .font(.system(size: 11, design: .monospaced))
-                                            .foregroundStyle(.secondary)
+                                    Spacer()
+                                    if isSelected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(Color.accentColor)
+                                            .font(.system(size: 14))
                                     }
                                 }
-                                Spacer()
-                                if isSelected {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(Color.accentColor)
-                                        .font(.system(size: 14))
-                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(isSelected ? Color.accentColor.opacity(0.06) : Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(isSelected ? Color.accentColor.opacity(0.06) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .buttonStyle(.plain)
+                            .opacity(needsKey ? 0.5 : 1)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(item.provider.requiresAPIKey && !ProviderRegistry.shared.isConnected(item.provider.id))
-                        .opacity(item.provider.requiresAPIKey && !ProviderRegistry.shared.isConnected(item.provider.id) ? 0.5 : 1)
                     }
                 }
                 .padding(6)
@@ -265,18 +280,33 @@ struct RetranscribeConfirmModal: View {
         let model: ModelInfo
     }
 
-    private var filteredModels: [ModelItem] {
-        var items: [ModelItem] = []
+    private struct ModelGroup {
+        let title: String
+        let items: [ModelItem]
+    }
+
+    private var groupedModels: [ModelGroup] {
+        var allItems: [ModelItem] = []
         for p in ProviderCatalog.transcriptionProviders {
             for m in p.models {
-                items.append(ModelItem(provider: p, model: m))
+                allItems.append(ModelItem(provider: p, model: m))
             }
         }
-        if searchQuery.isEmpty { return items }
-        let q = searchQuery.lowercased()
-        return items.filter {
-            $0.model.displayName.lowercased().contains(q) ||
-            $0.provider.name.lowercased().contains(q)
+
+        if !searchQuery.isEmpty {
+            let q = searchQuery.lowercased()
+            let filtered = allItems.filter {
+                $0.model.displayName.lowercased().contains(q) ||
+                $0.provider.name.lowercased().contains(q)
+            }
+            return [ModelGroup(title: "Results", items: filtered)]
         }
+
+        let onDevice = allItems.filter { $0.provider.privacy == .onDevice }
+        let cloud = allItems.filter { $0.provider.privacy == .cloud }
+        var groups: [ModelGroup] = []
+        if !onDevice.isEmpty { groups.append(ModelGroup(title: "On-device", items: onDevice)) }
+        if !cloud.isEmpty { groups.append(ModelGroup(title: "Cloud", items: cloud)) }
+        return groups
     }
 }
