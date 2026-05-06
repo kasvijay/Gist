@@ -14,6 +14,7 @@ struct SessionDetailView: View {
     enum DetailTab { case transcript, summary }
     @State private var activeTab: DetailTab = .summary
     @State private var showRegenerateConfirm = false
+    @State private var showRetranscribeConfirm = false
 
     var onStop: (() -> Void)?
 
@@ -97,12 +98,16 @@ struct SessionDetailView: View {
                     .frame(width: 200)
 
                     Button {
-                        showRegenerateConfirm = true
+                        if activeTab == .transcript {
+                            showRetranscribeConfirm = true
+                        } else {
+                            showRegenerateConfirm = true
+                        }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: "sparkles")
+                            Image(systemName: activeTab == .transcript ? "waveform" : "sparkles")
                                 .font(.system(size: 11, weight: .semibold))
-                            Text("Regenerate")
+                            Text(activeTab == .transcript ? "Re-transcribe" : "Regenerate")
                                 .font(.system(size: 12.5, weight: .semibold))
                         }
                         .foregroundStyle(.white)
@@ -263,6 +268,33 @@ struct SessionDetailView: View {
                         }
                     },
                     onClose: { showRegenerateConfirm = false }
+                )
+            }
+
+            if showRetranscribeConfirm {
+                let registry = ProviderRegistry.shared
+                RetranscribeConfirmModal(
+                    sessionName: sessionStore.sessions.first { $0.id == sessionID }?.name ?? "Session",
+                    currentProviderID: registry.defaults.transcriptionProviderID,
+                    currentModelID: registry.defaults.transcriptionModelID,
+                    onConfirm: { providerID, modelID, setAsDefault in
+                        showRetranscribeConfirm = false
+                        if setAsDefault {
+                            registry.defaults.transcriptionProviderID = providerID
+                            registry.defaults.transcriptionModelID = modelID
+                        }
+                        // Re-run the pipeline for this session
+                        if let entry = sessionStore.sessions.first(where: { $0.id == sessionID }) {
+                            recordingManager.runPipeline(
+                                for: entry,
+                                sessionStore: sessionStore,
+                                transcriptionEngine: transcriptionEngine,
+                                diarizationManager: diarizationManager,
+                                summarizationEngine: summarizationEngine
+                            )
+                        }
+                    },
+                    onClose: { showRetranscribeConfirm = false }
                 )
             }
         }
