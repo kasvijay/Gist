@@ -4,6 +4,7 @@ struct ModelsSettingsSheet: View {
     @EnvironmentObject var registry: ProviderRegistry
     @Environment(\.dismiss) private var dismiss
 
+    var initialTab: ProviderCapability = .transcription
     @State private var activeTab: ProviderCapability = .transcription
     @State private var selectedProviderID: ProviderID?
     @State private var showAPIKeyDrawer: ProviderInfo?
@@ -131,6 +132,7 @@ struct ModelsSettingsSheet: View {
             }
         }
         .onAppear {
+            activeTab = initialTab
             selectedProviderID = activeTab == .transcription
                 ? registry.defaults.transcriptionProviderID
                 : registry.defaults.summarizationProviderID

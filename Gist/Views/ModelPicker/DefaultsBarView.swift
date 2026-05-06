@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DefaultsBarView: View {
     @EnvironmentObject var registry: ProviderRegistry
-    @State private var showModelsSheet = false
+    @State private var sheetTab: ProviderCapability?
 
     var body: some View {
         HStack(spacing: 4) {
@@ -12,13 +12,17 @@ struct DefaultsBarView: View {
                 providerID: registry.defaults.transcriptionProviderID,
                 modelName: modelDisplayName(registry.defaults.transcriptionModelID, provider: registry.defaults.transcriptionProviderID)
             )
+            .onTapGesture { sheetTab = .transcription }
+
             Divider().frame(height: 28)
+
             defaultButton(
                 label: "SUMMARIZE",
                 icon: "sparkles",
                 providerID: registry.defaults.summarizationProviderID,
                 modelName: modelDisplayName(registry.defaults.summarizationModelID, provider: registry.defaults.summarizationProviderID)
             )
+            .onTapGesture { sheetTab = .summarization }
         }
         .padding(6)
         .background(
@@ -28,11 +32,8 @@ struct DefaultsBarView: View {
         )
         .padding(.horizontal, 10)
         .padding(.bottom, 8)
-        .onTapGesture {
-            showModelsSheet = true
-        }
-        .sheet(isPresented: $showModelsSheet) {
-            ModelsSettingsSheet()
+        .sheet(item: $sheetTab) { tab in
+            ModelsSettingsSheet(initialTab: tab)
         }
     }
 

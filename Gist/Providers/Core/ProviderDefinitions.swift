@@ -47,9 +47,11 @@ extension ProviderID {
 
 // MARK: - Capability & Privacy
 
-enum ProviderCapability: String, Codable {
+enum ProviderCapability: String, Codable, Identifiable {
     case transcription
     case summarization
+
+    var id: String { rawValue }
 }
 
 enum PrivacyLevel: String, Codable {
