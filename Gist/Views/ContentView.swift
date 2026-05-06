@@ -1,3 +1,4 @@
+import FluidAudio
 import SwiftUI
 
 struct ContentView: View {
@@ -43,7 +44,15 @@ struct ContentView: View {
             let stored = UserDefaults.standard.string(forKey: "defaultModel") ?? "large-v3"
             transcriptionEngine.modelName = stored
 
-            // First launch: download model (then unload to free memory)
+            // Pre-download Parakeet model if it's the default provider
+            if ProviderRegistry.shared.defaults.transcriptionProviderID == .localParakeet {
+                let cacheDir = AsrModels.defaultCacheDirectory(for: .v3)
+                if !AsrModels.modelsExist(at: cacheDir, version: .v3) {
+                    _ = try? await AsrModels.downloadAndLoad(version: .v3)
+                }
+            }
+
+            // First launch: download WhisperKit model (then unload to free memory)
             // Subsequent launches: skip loading — pipeline loads on demand
             if !transcriptionEngine.isModelCached {
                 await transcriptionEngine.loadModel()

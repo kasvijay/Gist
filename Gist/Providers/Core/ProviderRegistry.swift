@@ -4,8 +4,8 @@ import SwiftUI
 // MARK: - Model Defaults
 
 struct ModelDefaults: Codable {
-    var transcriptionProviderID: ProviderID = .localWhisper
-    var transcriptionModelID: String = "large-v3-turbo"
+    var transcriptionProviderID: ProviderID = .localParakeet
+    var transcriptionModelID: String = "parakeet-v3"
     var summarizationProviderID: ProviderID = .localMLX
     var summarizationModelID: String = "gemma-3-4b-it"
     var allowPerSessionOverride: Bool = true

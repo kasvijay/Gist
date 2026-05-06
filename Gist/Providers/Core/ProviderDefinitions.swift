@@ -115,7 +115,7 @@ enum ProviderCatalog {
                 ModelInfo(id: "medium", displayName: "medium", tier: .balanced, speedDescription: "4\u{00D7} realtime", costDescription: nil, contextWindow: nil, sizeGB: "770 MB", features: nil),
                 ModelInfo(id: "small", displayName: "small", tier: .fast, speedDescription: "12\u{00D7} realtime", costDescription: nil, contextWindow: nil, sizeGB: "244 MB", features: nil),
             ],
-            supportsBuiltInDiarization: false, isDefault: true
+            supportsBuiltInDiarization: false, isDefault: false
         ),
         ProviderInfo(
             id: .localParakeet, name: "Parakeet (Local)", vendor: "NVIDIA \u{00B7} on-device",
@@ -128,7 +128,7 @@ enum ProviderCatalog {
                 ModelInfo(id: "parakeet-v3", displayName: "Parakeet TDT v3", tier: .best, speedDescription: "120\u{00D7} realtime", costDescription: nil, contextWindow: nil, sizeGB: "300 MB", features: ["25 languages"]),
                 ModelInfo(id: "parakeet-v2", displayName: "Parakeet TDT v2", tier: .balanced, speedDescription: "110\u{00D7} realtime", costDescription: nil, contextWindow: nil, sizeGB: "300 MB", features: ["English"]),
             ],
-            supportsBuiltInDiarization: false, isDefault: false
+            supportsBuiltInDiarization: false, isDefault: true
         ),
         ProviderInfo(
             id: .openAIWhisper, name: "OpenAI Whisper", vendor: "OpenAI",
