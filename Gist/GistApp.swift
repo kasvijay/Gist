@@ -85,6 +85,7 @@ struct GistApp: App {
                 .environmentObject(transcriptionEngine)
                 .environmentObject(diarizationManager)
                 .environmentObject(summarizationEngine)
+                .environmentObject(providerRegistry)
         }
     }
 

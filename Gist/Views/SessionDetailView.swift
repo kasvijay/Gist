@@ -13,6 +13,7 @@ struct SessionDetailView: View {
 
     enum DetailTab { case transcript, summary }
     @State private var activeTab: DetailTab = .summary
+    @State private var showRegenerateConfirm = false
 
     var onStop: (() -> Void)?
 
@@ -96,16 +97,7 @@ struct SessionDetailView: View {
                     .frame(width: 200)
 
                     Button {
-                        if activeTab != .summary { activeTab = .summary }
-                        summarizationEngine.currentSummary = nil
-                        summarizationEngine.startSummarization(
-                            transcript: transcript,
-                            transcriptionEngine: transcriptionEngine
-                        ) { summary in
-                            if let summary {
-                                sessionStore.saveSummary(summary, for: sessionID)
-                            }
-                        }
+                        showRegenerateConfirm = true
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "sparkles")
@@ -219,6 +211,73 @@ struct SessionDetailView: View {
                     Spacer()
                 }
             }
+        }
+        .overlay {
+            if showRegenerateConfirm,
+               let transcript = sessionStore.loadTranscript(for: sessionID) {
+                let registry = ProviderRegistry.shared
+                RegenerateConfirmModal(
+                    sessionName: sessionStore.sessions.first { $0.id == sessionID }?.name ?? "Session",
+                    currentProviderID: registry.defaults.summarizationProviderID,
+                    currentModelID: registry.defaults.summarizationModelID,
+                    onConfirm: { providerID, modelID, setAsDefault in
+                        showRegenerateConfirm = false
+                        if setAsDefault {
+                            registry.defaults.summarizationProviderID = providerID
+                            registry.defaults.summarizationModelID = modelID
+                        }
+                        if activeTab != .summary { activeTab = .summary }
+                        summarizationEngine.currentSummary = nil
+
+                        if providerID == .localMLX {
+                            summarizationEngine.startSummarization(
+                                transcript: transcript,
+                                transcriptionEngine: transcriptionEngine
+                            ) { summary in
+                                if let summary {
+                                    sessionStore.saveSummary(summary, for: sessionID)
+                                }
+                            }
+                        } else {
+                            Task {
+                                let provider = makeSummarizationProvider(providerID)
+                                let userPrompt = SummaryPromptBuilder.buildUserPrompt(transcript: transcript)
+                                do {
+                                    let summary = try await provider.summarize(
+                                        transcript: transcript,
+                                        modelID: modelID,
+                                        systemPrompt: SummaryPromptBuilder.systemPrompt,
+                                        userPrompt: userPrompt,
+                                        stream: { text in
+                                            Task { @MainActor in
+                                                summarizationEngine.streamingText = text
+                                            }
+                                        }
+                                    )
+                                    sessionStore.saveSummary(summary, for: sessionID)
+                                    summarizationEngine.currentSummary = summary
+                                } catch {
+                                    summarizationEngine.streamingText = "Error: \(error.localizedDescription)"
+                                }
+                            }
+                        }
+                    },
+                    onClose: { showRegenerateConfirm = false }
+                )
+            }
+        }
+    }
+
+    private func makeSummarizationProvider(_ id: ProviderID) -> any SummarizationProvider {
+        switch id {
+        case .localMLX: return LocalMLXProvider(engine: summarizationEngine)
+        case .anthropic: return AnthropicProvider()
+        case .openAISummarization: return OpenAISummarizationProvider()
+        case .googleGemini: return GoogleGeminiProvider()
+        case .mistral: return MistralProvider()
+        case .ollama: return OllamaProvider()
+        case .groqSummarization: return GroqSummarizationProvider()
+        default: return LocalMLXProvider(engine: summarizationEngine)
         }
     }
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DefaultsBarView: View {
     @EnvironmentObject var registry: ProviderRegistry
+    @State private var showModelsSheet = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -27,6 +28,12 @@ struct DefaultsBarView: View {
         )
         .padding(.horizontal, 10)
         .padding(.bottom, 8)
+        .onTapGesture {
+            showModelsSheet = true
+        }
+        .sheet(isPresented: $showModelsSheet) {
+            ModelsSettingsSheet()
+        }
     }
 
     private func defaultButton(label: String, icon: String, providerID: ProviderID, modelName: String) -> some View {
