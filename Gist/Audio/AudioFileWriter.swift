@@ -17,6 +17,15 @@ final class AudioFileWriter: @unchecked Sendable {
     private var _isWriting = false
     private var _outputURL: URL?
 
+    /// The WAV's processing format, captured at start. All incoming buffers are
+    /// converted to this format before writing — protects against mid-recording
+    /// device changes (e.g. Bluetooth profile switches) that would otherwise
+    /// stamp a fixed sample-rate header onto samples captured at a different rate.
+    private var fileProcessingFormat: AVAudioFormat?
+    private var converter: AVAudioConverter?
+    private var converterInputSampleRate: Double = 0
+    private var converterInputChannelCount: AVAudioChannelCount = 0
+
     /// Serial queue for disk writes — keeps I/O off the audio thread.
     private let writeQueue = DispatchQueue(label: "com.vijaykas.gist.audiowriter", qos: .userInitiated)
 
@@ -39,6 +48,10 @@ final class AudioFileWriter: @unchecked Sendable {
 
         lock.lock()
         audioFile = file
+        fileProcessingFormat = file.processingFormat
+        converter = nil
+        converterInputSampleRate = 0
+        converterInputChannelCount = 0
         _isWriting = true
         _outputURL = outputURL
         lock.unlock()
@@ -90,17 +103,70 @@ final class AudioFileWriter: @unchecked Sendable {
         writeQueue.async { [weak self] in
             guard let self else { return }
             self.lock.lock()
-            guard self._isWriting, let file = self.audioFile else {
+            guard self._isWriting,
+                  let file = self.audioFile,
+                  let target = self.fileProcessingFormat else {
                 self.lock.unlock()
                 return
             }
             do {
-                try file.write(from: copy)
+                let bufferToWrite = try self.bufferMatchingFileFormat(source: copy, target: target)
+                try file.write(from: bufferToWrite)
             } catch {
                 self.logger.error("Failed to write audio buffer: \(error)")
             }
             self.lock.unlock()
         }
+    }
+
+    /// Convert `source` to the file's processing format if its sample rate or channel
+    /// count differs (e.g. the mic device changed mid-recording). Caller must hold `lock`.
+    private func bufferMatchingFileFormat(source: AVAudioPCMBuffer, target: AVAudioFormat) throws -> AVAudioPCMBuffer {
+        let inputFormat = source.format
+        if inputFormat.sampleRate == target.sampleRate
+            && inputFormat.channelCount == target.channelCount {
+            return source
+        }
+
+        if converter == nil
+            || converterInputSampleRate != inputFormat.sampleRate
+            || converterInputChannelCount != inputFormat.channelCount {
+            guard let newConverter = AVAudioConverter(from: inputFormat, to: target) else {
+                throw ConversionError.converterFailed
+            }
+            converter = newConverter
+            converterInputSampleRate = inputFormat.sampleRate
+            converterInputChannelCount = inputFormat.channelCount
+            logger.warning(
+                "Audio source format changed mid-recording: \(inputFormat.sampleRate)Hz \(inputFormat.channelCount)ch → file \(target.sampleRate)Hz \(target.channelCount)ch — resampling on write"
+            )
+        }
+
+        guard let converter else { throw ConversionError.converterFailed }
+
+        let ratio = target.sampleRate / inputFormat.sampleRate
+        let estimated = AVAudioFrameCount(Double(source.frameLength) * ratio + 1)
+        let capacity = max(estimated + 1024, 4096)
+        guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else {
+            throw ConversionError.converterFailed
+        }
+
+        var consumed = false
+        var convertError: NSError?
+        let status = converter.convert(to: output, error: &convertError) { _, statusPtr in
+            if consumed {
+                statusPtr.pointee = .noDataNow
+                return nil
+            }
+            consumed = true
+            statusPtr.pointee = .haveData
+            return source
+        }
+
+        if let convertError { throw convertError }
+        if status == .error { throw ConversionError.converterFailed }
+
+        return output
     }
 
     /// Finish writing. Waits for pending writes, then closes the file.
@@ -117,6 +183,10 @@ final class AudioFileWriter: @unchecked Sendable {
         }
         let url = _outputURL
         audioFile = nil
+        fileProcessingFormat = nil
+        converter = nil
+        converterInputSampleRate = 0
+        converterInputChannelCount = 0
         _isWriting = false
         _outputURL = nil
         lock.unlock()
@@ -224,6 +294,7 @@ final class AudioFileWriter: @unchecked Sendable {
         case exportFailed
         case exportCancelled
         case invalidWAV
+        case converterFailed
 
         var errorDescription: String? {
             switch self {
@@ -231,6 +302,7 @@ final class AudioFileWriter: @unchecked Sendable {
             case .exportFailed: return "Audio conversion failed"
             case .exportCancelled: return "Audio conversion was cancelled"
             case .invalidWAV: return "Not a valid WAV file"
+            case .converterFailed: return "Audio resampling failed"
             }
         }
     }
