@@ -12,7 +12,14 @@ build/
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
+
+# Track the Xcode project's Package.resolved so dependency versions are
+# reproducible across checkouts (FluidAudio shipped a breaking API change in
+# 0.14, so unpinned resolutions can fail on a fresh clone).
+!Gist.xcodeproj/project.xcworkspace/
+!Gist.xcodeproj/project.xcworkspace/xcshareddata/
+!Gist.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+!Gist.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # macOS
 .DS_Store
