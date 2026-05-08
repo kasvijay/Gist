@@ -78,6 +78,7 @@
 		C7CDB3B889FC8C32FD5E9FE5 /* HighPassFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F40DCE27C5382B04A2CE85 /* HighPassFilterTests.swift */; };
 		C878DEC562CB962116DE22A3 /* HighPassFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BFF235AFA263F63F8611170 /* HighPassFilter.swift */; };
 		D8545B49C3C0FFCC9F366732 /* SummaryPromptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114AE29BF24A0327CAC87208 /* SummaryPromptBuilder.swift */; };
+		D992353A5668E440AA7C1CC3 /* SummaryExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F1A947D774CFBA918A5053 /* SummaryExporter.swift */; };
 		DAC81C8E153BBAFC0F8657B1 /* AudioFileWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DF11B530A32F3E7CC053374 /* AudioFileWriter.swift */; };
 		DB837DF0AE36DBF2D5020C2F /* TranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C8DE998848973EC6C9BB64 /* TranscriptTests.swift */; };
 		DE2207DB3F05BA54D854D366 /* AnthropicProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51734A3D345DBA12DE74C004 /* AnthropicProvider.swift */; };
@@ -181,6 +182,7 @@
 		CEDE70D619445A82F9320CF8 /* GoogleTranscriptionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleTranscriptionProvider.swift; sourceTree = "<group>"; };
 		D1450C9D7A703C2FF530890E /* RecordingPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingPipeline.swift; sourceTree = "<group>"; };
 		D2119FF7436D866038346880 /* APIKeyDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeyDrawer.swift; sourceTree = "<group>"; };
+		D2F1A947D774CFBA918A5053 /* SummaryExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryExporter.swift; sourceTree = "<group>"; };
 		D4FB92443F721684E5486E2C /* SessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTests.swift; sourceTree = "<group>"; };
 		D5F40DCE27C5382B04A2CE85 /* HighPassFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighPassFilterTests.swift; sourceTree = "<group>"; };
 		D9057188DEA0B42D54ACD6E8 /* DiarizationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiarizationManager.swift; sourceTree = "<group>"; };
@@ -294,6 +296,7 @@
 				5520231827EDA95543457B1A /* SessionStore.swift */,
 				18314B1E8B20A13156B91F48 /* StreamingTranscriber.swift */,
 				1E960A23BF2549EF92A4BFC6 /* SummarizationEngine.swift */,
+				D2F1A947D774CFBA918A5053 /* SummaryExporter.swift */,
 				562F89D8A65DDEBFF51CFDF8 /* TranscriptionEngine.swift */,
 				31DC20A86338C97097682516 /* UpdateChecker.swift */,
 				2645D80A869D7087DE6AD274 /* VBxDiarizer.swift */,
@@ -632,6 +635,7 @@
 				066CFCAF2CBD0574B2157AD2 /* StreamingTranscriber.swift in Sources */,
 				6339BFF23AA27D33BC6C3F15 /* SummarizationEngine.swift in Sources */,
 				E73085872CE84A90FB58310A /* Summary.swift in Sources */,
+				D992353A5668E440AA7C1CC3 /* SummaryExporter.swift in Sources */,
 				EE0E06776EAD776D99940EDC /* SummaryModelTag.swift in Sources */,
 				D8545B49C3C0FFCC9F366732 /* SummaryPromptBuilder.swift in Sources */,
 				7A1A0043B25F284EE6E1FB39 /* SummaryView.swift in Sources */,

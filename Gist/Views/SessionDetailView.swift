@@ -16,6 +16,8 @@ struct SessionDetailView: View {
     @State private var showRegenerateConfirm = false
     @State private var showRetranscribeConfirm = false
     @State private var summarizingSessionID: String?
+    @State private var copiedAt: Date?
+    @State private var exportError: String?
 
     var onStop: (() -> Void)?
 
@@ -97,6 +99,10 @@ struct SessionDetailView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 200)
+
+                    if activeTab == .summary {
+                        exportMenu(summary: loadedSummary, entry: entry, transcript: transcript)
+                    }
 
                     Button {
                         if activeTab == .transcript {
@@ -301,6 +307,99 @@ struct SessionDetailView: View {
                     onClose: { showRetranscribeConfirm = false }
                 )
             }
+        }
+        .overlay(alignment: .bottom) {
+            if copiedAt != nil {
+                copiedToast
+                    .padding(.bottom, 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: copiedAt)
+        .task(id: copiedAt) {
+            guard copiedAt != nil else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            copiedAt = nil
+        }
+        .alert("Export failed",
+               isPresented: Binding(get: { exportError != nil },
+                                    set: { if !$0 { exportError = nil } })) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
+        }
+    }
+
+    private var copiedToast: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text("Copied to clipboard")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+        .shadow(color: Color.black.opacity(0.15), radius: 8, y: 3)
+    }
+
+    // MARK: - Export Menu
+
+    @ViewBuilder
+    private func exportMenu(summary: Summary?,
+                            entry: SessionIndex.SessionEntry?,
+                            transcript: Transcript?) -> some View {
+        Menu {
+            Button {
+                guard let summary else { return }
+                SummaryExporter.copyToPasteboard(summary: summary, entry: entry, transcript: transcript)
+                copiedAt = Date()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            Divider()
+            Button {
+                runExport(.doc, summary: summary, entry: entry, transcript: transcript)
+            } label: {
+                Label("Word Document", systemImage: "doc.richtext")
+            }
+            Button {
+                runExport(.pdf, summary: summary, entry: entry, transcript: transcript)
+            } label: {
+                Label("PDF", systemImage: "doc.fill")
+            }
+            Button {
+                runExport(.plainText, summary: summary, entry: entry, transcript: transcript)
+            } label: {
+                Label("Plain Text", systemImage: "doc.plaintext")
+            }
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(summary == nil)
+        .help(summary == nil ? "Generate a summary first" : "Export or copy summary")
+    }
+
+    private func runExport(_ format: SummaryExporter.Format,
+                           summary: Summary?,
+                           entry: SessionIndex.SessionEntry?,
+                           transcript: Transcript?) {
+        guard let summary else { return }
+        do {
+            try SummaryExporter.export(summary: summary, entry: entry, transcript: transcript, format: format)
+        } catch SummaryExporter.ExportError.cancelled {
+            // User dismissed the save panel — silent no-op
+        } catch {
+            exportError = error.localizedDescription
         }
     }
 
