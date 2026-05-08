@@ -36,7 +36,7 @@ struct APIKeyDrawer: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 24, height: 24)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).pointerHand()
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 18)
@@ -120,7 +120,7 @@ struct APIKeyDrawer: View {
                     Spacer()
 
                     Button("Cancel") { onClose() }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.plain).pointerHand()
                         .foregroundStyle(.secondary)
 
                     Button("Save & connect") {

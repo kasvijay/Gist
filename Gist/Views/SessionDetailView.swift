@@ -133,7 +133,7 @@ struct SessionDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .shadow(color: Color(red: 88/255, green: 132/255, blue: 210/255).opacity(0.3), radius: 3, y: 2)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).pointerHand()
                     .disabled(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording)
                     .opacity(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording ? 0.5 : 1)
                 }

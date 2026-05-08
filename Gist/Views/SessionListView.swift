@@ -115,7 +115,7 @@ struct SessionListView: View {
                             .shadow(color: Color(red: 220/255, green: 80/255, blue: 60/255).opacity(0.35), radius: 6, y: 4)
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).pointerHand()
                 .keyboardShortcut("r", modifiers: .command)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
@@ -165,7 +165,7 @@ struct SessionListView: View {
                             .shadow(color: Color(red: 88/255, green: 132/255, blue: 210/255).opacity(0.3), radius: 6, y: 4)
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).pointerHand()
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(recordingManager.isStarting)
                 .padding(.horizontal, 6)

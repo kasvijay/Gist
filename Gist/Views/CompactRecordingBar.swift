@@ -61,7 +61,7 @@ struct CompactRecordingBar: View {
                             )
                     )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).pointerHand()
 
             // Pause / Resume
             Button {
@@ -84,7 +84,7 @@ struct CompactRecordingBar: View {
                             )
                     )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).pointerHand()
 
             // Stop button
             Button {
@@ -111,7 +111,7 @@ struct CompactRecordingBar: View {
                         )
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).pointerHand()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)

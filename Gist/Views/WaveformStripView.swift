@@ -31,7 +31,7 @@ struct WaveformStripView: View {
                         .offset(x: audioPlayer.isPlaying ? 0 : 1)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).pointerHand()
 
             // Waveform bars
             GeometryReader { geo in

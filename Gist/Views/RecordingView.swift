@@ -89,7 +89,7 @@ struct RecordingView: View {
                                 .shadow(color: accentRed.opacity(0.4), radius: 8, y: 6)
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).pointerHand()
 
                     // Pause / Resume
                     Button {
@@ -113,7 +113,7 @@ struct RecordingView: View {
                                     )
                             )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).pointerHand()
                 }
                 .padding(.top, 32)
 
@@ -128,7 +128,7 @@ struct RecordingView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(recordingManager.isMicMuted ? .red : .secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).pointerHand()
                 .padding(.top, 14)
 
                 // Input levels card
@@ -159,7 +159,7 @@ struct RecordingView: View {
                                 .foregroundStyle(recordingManager.isMicMuted ? .red : .secondary)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).pointerHand()
                     .frame(maxWidth: .infinity)
 
                     Divider()

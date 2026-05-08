@@ -45,7 +45,7 @@ struct ModelsSettingsSheet: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).pointerHand()
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
@@ -111,7 +111,7 @@ struct ModelsSettingsSheet: View {
                     .foregroundStyle(.tertiary)
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.plain).pointerHand()
                     .foregroundStyle(.secondary)
                 Button("Save defaults") { dismiss() }
                     .buttonStyle(.borderedProminent)
@@ -168,7 +168,7 @@ struct ModelsSettingsSheet: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain).pointerHand()
     }
 
     // MARK: - Provider Row
@@ -252,7 +252,7 @@ struct ModelsSettingsSheet: View {
                     )
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain).pointerHand()
         .padding(.bottom, 8)
     }
 
@@ -384,7 +384,7 @@ struct ModelsSettingsSheet: View {
                     )
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain).pointerHand()
     }
 
     private var activeConfigFooter: some View {

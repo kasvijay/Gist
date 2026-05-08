@@ -124,7 +124,7 @@ struct RegenerateConfirmModal: View {
                                         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.plain).pointerHand()
                         }
 
                         // Inline model picker
@@ -262,7 +262,7 @@ struct RegenerateConfirmModal: View {
                                 .background(isSelected ? Color.accentColor.opacity(0.06) : Color.clear)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.plain).pointerHand()
                             .opacity(needsKey ? 0.5 : 1)
                         }
                     }

@@ -94,6 +94,7 @@
 		F2EA8F15F53FB494DFB0262C /* WaveformStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 697D2D4D7B8B889CA25C9E66 /* WaveformStripView.swift */; };
 		F7C7BE9CF6C834E660FC06CB /* OpenAIWhisperProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91EFCE5D64E282C8C6F6F43 /* OpenAIWhisperProvider.swift */; };
 		F9E3508776610D6F98C61150 /* AudioPlayerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD58723079768078C52A9BE2 /* AudioPlayerService.swift */; };
+		FA45C1C058680CE482DFE6B0 /* PointerHand.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6ABD0BA6C5292716FEBC5B /* PointerHand.swift */; };
 		FB04F738E725FC9819691EA0 /* AudioSharedState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D73D61802A1C9C4C903CBE0 /* AudioSharedState.swift */; };
 		FC4579F67EC216F9952B14CD /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FB92443F721684E5486E2C /* SessionTests.swift */; };
 /* End PBXBuildFile section */
@@ -201,6 +202,7 @@
 		F450E0540338CCEF3CD0C134 /* SummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryView.swift; sourceTree = "<group>"; };
 		F9FD06AAB574111F3B7048C3 /* CloudHTTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudHTTPClient.swift; sourceTree = "<group>"; };
 		FA101310FD3DB624139C29F9 /* DefaultsBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultsBarView.swift; sourceTree = "<group>"; };
+		FC6ABD0BA6C5292716FEBC5B /* PointerHand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointerHand.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -343,6 +345,7 @@
 				279619974F591679CCD4396C /* ContentView.swift */,
 				13AB54FDE980F784A38FEF7D /* LiveTranscriptView.swift */,
 				003791E35CD99FE18F63F896 /* MenuBarView.swift */,
+				FC6ABD0BA6C5292716FEBC5B /* PointerHand.swift */,
 				AB4002DA7026BB2B9DF9E107 /* RecordingView.swift */,
 				DB8A777925D2352AD879D70C /* SessionDetailView.swift */,
 				7F01EE02110B1B6F6A9425A7 /* SessionListView.swift */,
@@ -614,6 +617,7 @@
 				565DDA549A305C6C1532010C /* OllamaProvider.swift in Sources */,
 				6167424A9767A23DC4866993 /* OpenAISummarizationProvider.swift in Sources */,
 				F7C7BE9CF6C834E660FC06CB /* OpenAIWhisperProvider.swift in Sources */,
+				FA45C1C058680CE482DFE6B0 /* PointerHand.swift in Sources */,
 				122B26949AAF6758FB8FB000 /* ProviderDefinitions.swift in Sources */,
 				953A74D2A5087169A83AF96E /* ProviderMarkView.swift in Sources */,
 				35AAE2F2B552E8C4BB3A5272 /* ProviderProtocol.swift in Sources */,
