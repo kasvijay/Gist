@@ -21,7 +21,11 @@ final class SummaryTests: XCTestCase {
             overview: "This was a meeting about X.",
             decisions: ["Decision 1", "Decision 2"],
             actionItems: ["Action 1"],
-            keyPoints: ["Point A", "Point B", "Point C"]
+            keyPoints: [
+                TimedKeyPoint(text: "Point A", startSeconds: 12),
+                TimedKeyPoint(text: "Point B", startSeconds: nil),
+                TimedKeyPoint(text: "Point C", startSeconds: 95)
+            ]
         )
 
         let data = try encoder.encode(original)
@@ -33,6 +37,25 @@ final class SummaryTests: XCTestCase {
         XCTAssertEqual(decoded.decisions, ["Decision 1", "Decision 2"])
         XCTAssertEqual(decoded.actionItems, ["Action 1"])
         XCTAssertEqual(decoded.keyPoints?.count, 3)
+        XCTAssertEqual(decoded.keyPoints?[0].text, "Point A")
+        XCTAssertEqual(decoded.keyPoints?[0].startSeconds, 12)
+        XCTAssertNil(decoded.keyPoints?[1].startSeconds)
+    }
+
+    func testCodableLegacyKeyPointsAsStringArray() throws {
+        let json = """
+        {
+            "created": "2026-01-01T12:00:00Z",
+            "model": "gemma-3",
+            "content": "output",
+            "keyPoints": ["Legacy point 1", "Legacy point 2"]
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try decoder.decode(Summary.self, from: json)
+        XCTAssertEqual(decoded.keyPoints?.count, 2)
+        XCTAssertEqual(decoded.keyPoints?[0].text, "Legacy point 1")
+        XCTAssertNil(decoded.keyPoints?[0].startSeconds)
     }
 
     func testCodableWithMissingOptionalFields() throws {
