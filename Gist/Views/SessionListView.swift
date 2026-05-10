@@ -175,6 +175,29 @@ struct SessionListView: View {
                 .padding(.vertical, 6)
             }
 
+            // Secondary action: import a transcript from Teams / Zoom / etc.
+            Button {
+                importInitialText = ""
+                importInitialFilename = ""
+                showImportSheet = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 22, height: 22)
+                    Text("Import transcript")
+                        .font(.system(size: 12.5, weight: .medium))
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).pointerHand()
+            .padding(.horizontal, 6)
+            .padding(.bottom, 6)
+
             List(selection: $selectedSessionID) {
                 ForEach(groupedSessions, id: \.0) { group in
                     Section(isExpanded: sectionExpanded(group.0)) {
@@ -194,17 +217,6 @@ struct SessionListView: View {
             DefaultsBarView()
         }
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    importInitialText = ""
-                    importInitialFilename = ""
-                    showImportSheet = true
-                } label: {
-                    Image(systemName: "square.and.arrow.down")
-                }
-                .help("Import Transcript")
-                .pointerHand()
-            }
             ToolbarItem(placement: .automatic) {
                 Menu {
                     Button("Import Audio...") {
