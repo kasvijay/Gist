@@ -9,6 +9,7 @@ struct SummaryView: View {
     var transcript: Transcript? = nil
     var onRegenerate: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
+    var onJumpToTime: ((TimeInterval) -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -194,9 +195,15 @@ struct SummaryView: View {
         // 5. Key Discussion Points
         if let keyPoints = summary.keyPoints, !keyPoints.isEmpty {
             sectionHeader(title: "KEY DISCUSSION POINTS", count: keyPoints.count)
+            if keyPoints.contains(where: { $0.startSeconds != nil }) {
+                Text("Tap a timestamp to jump to that moment.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 2)
+            }
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(keyPoints, id: \.self) { item in
-                    bulletItem(item)
+                ForEach(keyPoints) { point in
+                    keyPointRow(point)
                 }
             }
         }
@@ -305,6 +312,56 @@ struct SummaryView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func keyPointRow(_ point: TimedKeyPoint) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\u{2022}")
+                .foregroundStyle(.secondary)
+                .padding(.top, 1)
+            Text(point.text)
+                .font(.body)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let seconds = point.startSeconds {
+                Text(Self.formatTimestampLabel(seconds))
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(SummaryView.accentGradient)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.blue.opacity(0.08))
+                    )
+                    .pointerHand()
+                    .onTapGesture {
+                        onJumpToTime?(TimeInterval(seconds))
+                    }
+                    .help("Jump to \(Self.formatTimestampLabel(seconds))")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    static let accentGradient = LinearGradient(
+        colors: [
+            Color(red: 88/255, green: 132/255, blue: 210/255),
+            Color(red: 68/255, green: 110/255, blue: 190/255)
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static func formatTimestampLabel(_ seconds: Float) -> String {
+        let total = max(Int(seconds.rounded()), 0)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 
     private func bulletItem(_ text: String) -> some View {

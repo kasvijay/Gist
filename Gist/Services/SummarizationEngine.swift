@@ -358,7 +358,7 @@ final class SummarizationEngine: ObservableObject {
                 return nil
             }
 
-            let summary = parseSummary(output: output, model: modelName)
+            let summary = SummaryPromptBuilder.parseSummary(output: output, model: modelName, transcript: transcript)
             currentSummary = summary
             state = .complete
             logger.info("Summarization complete: \(output.count) chars")
@@ -537,52 +537,8 @@ final class SummarizationEngine: ObservableObject {
     }
 
     // MARK: - Parsing
-
-    func parseSummary(output: String, model: String) -> Summary {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        let overview = extractParagraph(from: trimmed, header: "## Overview")
-        let decisions = extractSection(from: trimmed, header: "## Decisions")
-        let actionItems = extractSection(from: trimmed, header: "## Action Items")
-        let keyPoints = extractSection(from: trimmed, header: "## Key Discussion Points")
-
-        return Summary(
-            created: Date(),
-            model: model,
-            content: trimmed,
-            overview: overview,
-            decisions: decisions,
-            actionItems: actionItems,
-            keyPoints: keyPoints
-        )
-    }
-
-    func extractParagraph(from text: String, header: String) -> String? {
-        guard let headerRange = text.range(of: header) else { return nil }
-        let afterHeader = text[headerRange.upperBound...]
-
-        let nextHeader = afterHeader.range(of: "\n## ")
-        let sectionEnd = nextHeader?.lowerBound ?? afterHeader.endIndex
-        let section = String(afterHeader[..<sectionEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return section.isEmpty ? nil : section
-    }
-
-    func extractSection(from text: String, header: String) -> [String]? {
-        guard let headerRange = text.range(of: header) else { return nil }
-        let afterHeader = text[headerRange.upperBound...]
-
-        let nextHeader = afterHeader.range(of: "\n## ")
-        let sectionEnd = nextHeader?.lowerBound ?? afterHeader.endIndex
-        let section = afterHeader[..<sectionEnd]
-
-        let items = section
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { $0.hasPrefix("- ") || $0.hasPrefix("* ") }
-            .map { String($0.dropFirst(2)) }
-
-        return items.isEmpty ? nil : items
-    }
+    // (Parsing now lives in SummaryPromptBuilder.parseSummary so the timestamp
+    //  validator is a single source of truth across local and cloud paths.)
 
     // MARK: - Cache Management
 

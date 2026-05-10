@@ -8,9 +8,15 @@ struct Summary: Codable {
     var overview: String?
     var decisions: [String]?
     var actionItems: [String]?
-    var keyPoints: [String]?
+    var keyPoints: [TimedKeyPoint]?
 
-    init(created: Date, model: String, content: String, overview: String? = nil, decisions: [String]? = nil, actionItems: [String]? = nil, keyPoints: [String]? = nil) {
+    init(created: Date,
+         model: String,
+         content: String,
+         overview: String? = nil,
+         decisions: [String]? = nil,
+         actionItems: [String]? = nil,
+         keyPoints: [TimedKeyPoint]? = nil) {
         self.created = created
         self.model = model
         self.content = content
@@ -29,6 +35,32 @@ struct Summary: Codable {
         self.overview = try container.decodeIfPresent(String.self, forKey: .overview)
         self.decisions = try container.decodeIfPresent([String].self, forKey: .decisions)
         self.actionItems = try container.decodeIfPresent([String].self, forKey: .actionItems)
-        self.keyPoints = try container.decodeIfPresent([String].self, forKey: .keyPoints)
+        // Backward compatibility: older summaries on disk stored keyPoints as [String].
+        if let typed = try? container.decodeIfPresent([TimedKeyPoint].self, forKey: .keyPoints) {
+            self.keyPoints = typed
+        } else if let legacy = try? container.decodeIfPresent([String].self, forKey: .keyPoints) {
+            self.keyPoints = legacy.map { TimedKeyPoint(text: $0, startSeconds: nil) }
+        } else {
+            self.keyPoints = nil
+        }
+    }
+}
+
+struct TimedKeyPoint: Codable, Hashable, Identifiable {
+    var id: UUID
+    var text: String
+    var startSeconds: Float?
+
+    init(id: UUID = UUID(), text: String, startSeconds: Float? = nil) {
+        self.id = id
+        self.text = text
+        self.startSeconds = startSeconds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = (try? container.decode(UUID.self, forKey: .id)) ?? UUID()
+        self.text = try container.decode(String.self, forKey: .text)
+        self.startSeconds = try container.decodeIfPresent(Float.self, forKey: .startSeconds)
     }
 }

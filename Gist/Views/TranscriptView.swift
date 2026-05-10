@@ -5,6 +5,19 @@ struct TranscriptView: View {
     var entry: SessionIndex.SessionEntry? = nil
     var loadedSummary: Summary? = nil
     var audioURL: URL? = nil
+    @Binding var jumpToTime: TimeInterval?
+
+    init(transcript: Transcript,
+         entry: SessionIndex.SessionEntry? = nil,
+         loadedSummary: Summary? = nil,
+         audioURL: URL? = nil,
+         jumpToTime: Binding<TimeInterval?> = .constant(nil)) {
+        self.transcript = transcript
+        self.entry = entry
+        self.loadedSummary = loadedSummary
+        self.audioURL = audioURL
+        self._jumpToTime = jumpToTime
+    }
 
     @EnvironmentObject var audioPlayer: AudioPlayerService
 
@@ -19,6 +32,7 @@ struct TranscriptView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 // Session header (inside scroll area for full-width scrolling)
@@ -84,6 +98,39 @@ struct TranscriptView: View {
         .onChange(of: audioURL) { _, newURL in
             if let url = newURL { audioPlayer.load(url: url) }
         }
+        .onChange(of: jumpToTime) { _, newValue in
+            guard let target = newValue else { return }
+            performJump(to: target, scrollProxy: proxy)
+            jumpToTime = nil
+        }
+        }
+    }
+
+    /// Seek the audio player to `target`, ensure playback is running, and scroll
+    /// the matching transcript segment into view.
+    private func performJump(to target: TimeInterval, scrollProxy: ScrollViewProxy) {
+        if audioURL != nil { audioPlayer.load(url: audioURL!) }
+        audioPlayer.seek(toTime: target)
+        if !audioPlayer.isPlaying { audioPlayer.togglePlayback() }
+
+        if let segment = nearestSegment(to: target) {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                scrollProxy.scrollTo(segment.id, anchor: .center)
+            }
+        }
+    }
+
+    private func nearestSegment(to target: TimeInterval) -> Transcript.Segment? {
+        let t = Float(target)
+        var best: Transcript.Segment?
+        for segment in transcript.segments {
+            if segment.start <= t {
+                best = segment
+            } else {
+                break
+            }
+        }
+        return best ?? transcript.segments.first
     }
 
     private func isActiveSegment(_ segment: Transcript.Segment) -> Bool {

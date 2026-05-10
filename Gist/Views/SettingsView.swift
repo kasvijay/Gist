@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("customModelPath") private var customModelPath = ""
     @AppStorage("summarizationModel") private var summarizationModel = "mlx-community/gemma-3-4b-it-qat-4bit"
     @AppStorage("diarizationMethod") private var diarizationMethod = "vbx"
+    @AppStorage("summaryTimestampStrictness") private var timestampStrictness = "balanced"
 
     @State private var micPermission: AVAudioApplication.recordPermission = .undetermined
     @State private var systemAudioGranted = false
@@ -170,6 +171,17 @@ struct SettingsView: View {
                 summarizationStatusRow
 
                 Text("Used for generating meeting summaries after each recording. Downloads from HuggingFace on first use, then runs fully offline.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("Timestamp accuracy", selection: $timestampStrictness) {
+                    Text("Strict").tag("strict")
+                    Text("Balanced").tag("balanced")
+                    Text("Lenient").tag("lenient")
+                }
+                .pickerStyle(.segmented)
+
+                Text("Controls when to show clickable timestamps on Key Discussion Points. Strict hides them when the AI isn't confident. Lenient shows them more often but they may be slightly off.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

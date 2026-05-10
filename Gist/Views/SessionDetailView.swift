@@ -18,6 +18,7 @@ struct SessionDetailView: View {
     @State private var summarizingSessionID: String?
     @State private var copiedAt: Date?
     @State private var exportError: String?
+    @State private var pendingJumpTime: TimeInterval?
 
     var onStop: (() -> Void)?
 
@@ -149,7 +150,8 @@ struct SessionDetailView: View {
                         transcript: transcript,
                         entry: entry,
                         loadedSummary: loadedSummary,
-                        audioURL: audioURL(for: sessionID)
+                        audioURL: audioURL(for: sessionID),
+                        jumpToTime: $pendingJumpTime
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .summary:
@@ -163,6 +165,12 @@ struct SessionDetailView: View {
                         onRegenerate: nil,
                         onCancel: {
                             summarizationEngine.cancel()
+                        },
+                        onJumpToTime: { time in
+                            activeTab = .transcript
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                pendingJumpTime = time
+                            }
                         }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

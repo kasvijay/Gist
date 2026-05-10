@@ -290,11 +290,9 @@ enum SummaryExporter {
                                 hint: "\(points.count)")
             for (i, item) in points.enumerated() {
                 let number = String(format: "%02d.", i + 1)
-                appendBulletItem(into: out,
-                                 marker: number,
-                                 markerColor: .tertiaryLabelColor,
-                                 text: item,
-                                 markerFont: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular))
+                appendKeyPointItem(into: out,
+                                   marker: number,
+                                   point: item)
             }
             appendSpacer(into: out)
         }
@@ -372,7 +370,8 @@ enum SummaryExporter {
             lines.append("")
             lines.append("KEY DISCUSSION POINTS (\(points.count))")
             for (i, item) in points.enumerated() {
-                lines.append(String(format: "  %02d. %@", i + 1, item))
+                let suffix = item.startSeconds.map { "  [\(formatTimestampLabel($0))]" } ?? ""
+                lines.append(String(format: "  %02d. %@%@", i + 1, item.text, suffix))
             }
         }
 
@@ -487,6 +486,47 @@ enum SummaryExporter {
             .paragraphStyle: bulletPara
         ]))
         out.append(line)
+    }
+
+    private static func appendKeyPointItem(into out: NSMutableAttributedString,
+                                            marker: String,
+                                            point: TimedKeyPoint) {
+        let bulletPara = NSMutableParagraphStyle()
+        bulletPara.headIndent = 22
+        bulletPara.firstLineHeadIndent = 0
+        bulletPara.paragraphSpacing = 6
+        bulletPara.lineSpacing = 2
+        bulletPara.tabStops = [NSTextTab(textAlignment: .left, location: 22)]
+
+        let line = NSMutableAttributedString()
+        line.append(string("\(marker)\t", attrs: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+            .paragraphStyle: bulletPara
+        ]))
+        line.append(string(point.text, attrs: [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: bulletPara
+        ]))
+        if let seconds = point.startSeconds {
+            line.append(string("  [\(formatTimestampLabel(seconds))]", attrs: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                .foregroundColor: NSColor.tertiaryLabelColor,
+                .paragraphStyle: bulletPara
+            ]))
+        }
+        line.append(string("\n", attrs: [.paragraphStyle: bulletPara]))
+        out.append(line)
+    }
+
+    private static func formatTimestampLabel(_ seconds: Float) -> String {
+        let total = max(Int(seconds.rounded()), 0)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%d:%02d", m, s)
     }
 
     private static func appendSpacer(into out: NSMutableAttributedString) {

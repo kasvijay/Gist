@@ -59,6 +59,6 @@ final class GoogleGeminiProvider: SummarizationProvider, Sendable {
             }
         }
 
-        return SummaryPromptBuilder.parseSummary(output: accumulator.value, model: modelID)
+        return SummaryPromptBuilder.parseSummary(output: accumulator.value, model: modelID, transcript: transcript)
     }
 }
