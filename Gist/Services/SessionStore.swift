@@ -100,6 +100,80 @@ final class SessionStore: ObservableObject {
         return session
     }
 
+    /// Create a session from an externally-supplied transcript (paste / drop / file).
+    /// No audio file is stored — `hasAudio` is false on the index entry.
+    /// Returns the new SessionEntry.
+    @discardableResult
+    func createImportedSession(name: String, transcript: Transcript) -> SessionIndex.SessionEntry {
+        let now = Date()
+        let id = Session.makeID(date: now)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = trimmedName.isEmpty ? "Imported Transcript" : trimmedName
+
+        let session = Session(
+            id: id,
+            name: displayName,
+            startedAt: now,
+            endedAt: now,
+            durationSeconds: transcript.durationSeconds > 0 ? transcript.durationSeconds : nil,
+            status: .complete,
+            devices: nil
+        )
+
+        // Create folder
+        let folderURL = baseURL.appendingPathComponent(session.folderName)
+        do {
+            try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        } catch {
+            logger.error("Failed to create imported session folder: \(error)")
+        }
+
+        // Write metadata + transcript synchronously so the UI can render immediately.
+        writeMetadata(session)
+        let transcriptURL = transcriptURL(for: session)
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(transcript)
+            try data.write(to: transcriptURL, options: .atomic)
+        } catch {
+            logger.error("Failed to write imported transcript: \(error)")
+        }
+
+        let entry = SessionIndex.SessionEntry(
+            id: session.id,
+            name: displayName,
+            startedAt: now,
+            endedAt: now,
+            durationSeconds: session.durationSeconds,
+            model: transcript.model,
+            path: session.folderName,
+            hasAudio: false,
+            hasTranscript: true,
+            segmentCount: transcript.segments.count,
+            languagesDetected: nil
+        )
+        sessions.removeAll { $0.id == session.id }
+        sessions.insert(entry, at: 0)
+        writeIndex()
+        return entry
+    }
+
+    /// Persist an updated transcript for an imported (or any) session by ID.
+    /// Stamps `editedAt` and updates the in-memory index. Used by inline editing.
+    func saveEditedTranscript(_ transcript: Transcript, forSessionID sessionID: String) {
+        guard let entry = sessions.first(where: { $0.id == sessionID }) else { return }
+        var updated = transcript
+        updated.editedAt = Date()
+        let folder = baseURL.appendingPathComponent(entry.path)
+        let url = folder.appendingPathComponent("transcript.json")
+        Self.writeInBackground(updated, to: url)
+        if let idx = sessions.firstIndex(where: { $0.id == sessionID }) {
+            sessions[idx].segmentCount = updated.segments.count
+        }
+    }
+
     func finishSession(duration: TimeInterval) {
         guard var session = currentSession else { return }
         session.endedAt = Date()

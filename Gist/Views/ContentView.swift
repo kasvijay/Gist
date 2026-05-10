@@ -1,5 +1,6 @@
 import FluidAudio
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var sessionStore: SessionStore
@@ -8,10 +9,18 @@ struct ContentView: View {
     @EnvironmentObject var diarizationManager: DiarizationManager
     @EnvironmentObject var summarizationEngine: SummarizationEngine
     @State private var selectedSessionID: String?
+    @State private var showImportSheet = false
+    @State private var importInitialText = ""
+    @State private var importInitialFilename = ""
 
     var body: some View {
         NavigationSplitView {
-            SessionListView(selectedSessionID: $selectedSessionID)
+            SessionListView(
+                selectedSessionID: $selectedSessionID,
+                showImportSheet: $showImportSheet,
+                importInitialText: $importInitialText,
+                importInitialFilename: $importInitialFilename
+            )
         } detail: {
             SessionDetailView(selectedSessionID: $selectedSessionID, onStop: {
                 if let result = recordingManager.stopRecording(
@@ -29,6 +38,18 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .automatic) {
                 modelStatusView
             }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            handleWindowDrop(providers: providers)
+        }
+        .sheet(isPresented: $showImportSheet) {
+            ImportTranscriptSheet(
+                initialText: importInitialText,
+                initialFilename: importInitialFilename,
+                onImport: { sessionID in
+                    selectedSessionID = sessionID
+                }
+            )
         }
         .task {
             summarizationEngine.transcriptionEngine = transcriptionEngine
@@ -108,6 +129,30 @@ struct ContentView: View {
         } message: {
             Text("Have you informed all participants that you are recording this conversation?")
         }
+    }
+
+    private func handleWindowDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        let allowed: Set<String> = ["vtt", "srt", "txt", "text"]
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            guard let data = item as? Data,
+                  let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+            guard allowed.contains(url.pathExtension.lowercased()) else { return }
+            Task { @MainActor in
+                switch TranscriptImporter.readFile(at: url) {
+                case .success(let text):
+                    importInitialText = text
+                    importInitialFilename = url.lastPathComponent
+                    showImportSheet = true
+                case .failure:
+                    // Surfacing an error from a window-level drop without a sheet open
+                    // would feel out of context. The sheet's own validation will surface
+                    // any parse error if the user opens the sheet manually.
+                    break
+                }
+            }
+        }
+        return true
     }
 
     @ViewBuilder

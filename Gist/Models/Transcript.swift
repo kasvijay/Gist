@@ -3,12 +3,51 @@ import WhisperKit
 
 /// Gist's transcript format, wrapping WhisperKit segments with session metadata.
 struct Transcript: Codable {
+    enum Source: String, Codable {
+        case recorded   // produced by the in-app recording + transcription pipeline
+        case imported   // pasted, dropped, or opened from an external file
+    }
+
     var version: String = "1.0"
     var created: Date
     var durationSeconds: Double
     var model: String
     var speakers: [String: Speaker]?
     var segments: [Segment]
+    var source: Source = .recorded
+    /// Last time the transcript text was edited by the user. Used to show
+    /// the "Transcript edited since summary was generated" banner.
+    var editedAt: Date?
+
+    init(version: String = "1.0",
+         created: Date,
+         durationSeconds: Double,
+         model: String,
+         speakers: [String: Speaker]? = nil,
+         segments: [Segment],
+         source: Source = .recorded,
+         editedAt: Date? = nil) {
+        self.version = version
+        self.created = created
+        self.durationSeconds = durationSeconds
+        self.model = model
+        self.speakers = speakers
+        self.segments = segments
+        self.source = source
+        self.editedAt = editedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = (try? container.decode(String.self, forKey: .version)) ?? "1.0"
+        self.created = try container.decode(Date.self, forKey: .created)
+        self.durationSeconds = try container.decode(Double.self, forKey: .durationSeconds)
+        self.model = try container.decode(String.self, forKey: .model)
+        self.speakers = try container.decodeIfPresent([String: Speaker].self, forKey: .speakers)
+        self.segments = try container.decode([Segment].self, forKey: .segments)
+        self.source = (try? container.decodeIfPresent(Source.self, forKey: .source)) ?? .recorded
+        self.editedAt = try container.decodeIfPresent(Date.self, forKey: .editedAt)
+    }
 
     struct Segment: Codable, Identifiable {
         var id: UUID

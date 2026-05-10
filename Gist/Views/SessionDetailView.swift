@@ -105,6 +105,8 @@ struct SessionDetailView: View {
                         exportMenu(summary: loadedSummary, entry: entry, transcript: transcript)
                     }
 
+                    let isImported = transcript.source == .imported
+                    if !(activeTab == .transcript && isImported) {
                     Button {
                         if activeTab == .transcript {
                             showRetranscribeConfirm = true
@@ -137,6 +139,7 @@ struct SessionDetailView: View {
                     .buttonStyle(.plain).pointerHand()
                     .disabled(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording)
                     .opacity(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording ? 0.5 : 1)
+                    } // end Re-transcribe gate
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
@@ -151,7 +154,10 @@ struct SessionDetailView: View {
                         entry: entry,
                         loadedSummary: loadedSummary,
                         audioURL: audioURL(for: sessionID),
-                        jumpToTime: $pendingJumpTime
+                        jumpToTime: $pendingJumpTime,
+                        onEdit: { updated in
+                            sessionStore.saveEditedTranscript(updated, forSessionID: sessionID)
+                        }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .summary:
@@ -171,6 +177,9 @@ struct SessionDetailView: View {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                                 pendingJumpTime = time
                             }
+                        },
+                        onRegenerateAfterEdit: {
+                            showRegenerateConfirm = true
                         }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -10,6 +10,7 @@ struct SummaryView: View {
     var onRegenerate: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
     var onJumpToTime: ((TimeInterval) -> Void)? = nil
+    var onRegenerateAfterEdit: (() -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -40,6 +41,10 @@ struct SummaryView: View {
                             .disabled(isLoading)
                         }
                     }
+                }
+
+                if let summary, transcriptEditedAfterSummary(summary) {
+                    transcriptEditedBanner
                 }
 
                 if isLoading {
@@ -342,6 +347,34 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func transcriptEditedAfterSummary(_ summary: Summary) -> Bool {
+        guard let editedAt = transcript?.editedAt else { return false }
+        return editedAt > summary.created
+    }
+
+    private var transcriptEditedBanner: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Transcript edited after this summary was generated.")
+                    .font(.system(size: 12, weight: .medium))
+                Text("The summary won't auto-update — regenerate when you're ready.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let onRegenerateAfterEdit {
+                Button("Regenerate", action: onRegenerateAfterEdit)
+                    .controlSize(.small)
+                    .pointerHand()
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.25)))
     }
 
     static let accentGradient = LinearGradient(

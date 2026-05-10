@@ -8,6 +8,9 @@ struct SessionListView: View {
     @EnvironmentObject var summarizationEngine: SummarizationEngine
 
     @Binding var selectedSessionID: String?
+    @Binding var showImportSheet: Bool
+    @Binding var importInitialText: String
+    @Binding var importInitialFilename: String
     @State private var renamingSessionID: String?
     @State private var renameText: String = ""
     @State private var searchText: String = ""
@@ -192,10 +195,27 @@ struct SessionListView: View {
         }
         .toolbar {
             ToolbarItem(placement: .automatic) {
+                Button {
+                    importInitialText = ""
+                    importInitialFilename = ""
+                    showImportSheet = true
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .help("Import Transcript")
+                .pointerHand()
+            }
+            ToolbarItem(placement: .automatic) {
                 Menu {
                     Button("Import Audio...") {
                         importAudio()
                     }
+                    Button("Import Transcript...") {
+                        importInitialText = ""
+                        importInitialFilename = ""
+                        showImportSheet = true
+                    }
+                    Divider()
                     Button("Open Folder in Finder") {
                         NSWorkspace.shared.open(sessionStore.baseURL)
                     }

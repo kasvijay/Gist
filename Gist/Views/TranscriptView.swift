@@ -1,25 +1,30 @@
 import SwiftUI
 
 struct TranscriptView: View {
-    let transcript: Transcript
+    var transcript: Transcript
     var entry: SessionIndex.SessionEntry? = nil
     var loadedSummary: Summary? = nil
     var audioURL: URL? = nil
     @Binding var jumpToTime: TimeInterval?
+    var onEdit: ((Transcript) -> Void)? = nil
 
     init(transcript: Transcript,
          entry: SessionIndex.SessionEntry? = nil,
          loadedSummary: Summary? = nil,
          audioURL: URL? = nil,
-         jumpToTime: Binding<TimeInterval?> = .constant(nil)) {
+         jumpToTime: Binding<TimeInterval?> = .constant(nil),
+         onEdit: ((Transcript) -> Void)? = nil) {
         self.transcript = transcript
         self.entry = entry
         self.loadedSummary = loadedSummary
         self.audioURL = audioURL
         self._jumpToTime = jumpToTime
+        self.onEdit = onEdit
     }
 
     @EnvironmentObject var audioPlayer: AudioPlayerService
+    @State private var draftSegments: [Transcript.Segment] = []
+    @State private var hasInitializedDraft = false
 
     private let speakerColorPalette: [Color] = [.blue, .green, .orange, .purple, .pink, .cyan, .mint, .indigo, .brown, .teal]
 
@@ -41,49 +46,14 @@ struct TranscriptView: View {
                         .padding(.bottom, 12)
                 }
 
-                // Waveform player strip
-                if audioURL != nil {
+                // Waveform player strip — recorded sessions only
+                if transcript.source == .recorded, audioURL != nil {
                     WaveformStripView()
                         .padding(.bottom, 14)
                 }
 
-                ForEach(transcript.segments) { segment in
-                    HStack(alignment: .top, spacing: 0) {
-                        // Playhead rail
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(isActiveSegment(segment) ? Color.accentColor : Color.clear)
-                            .frame(width: 2)
-                            .padding(.vertical, 2)
-
-                        HStack(alignment: .top, spacing: 12) {
-                            Text(formatTimestamp(segment.start))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 50, alignment: .trailing)
-                                .monospacedDigit()
-                                .onTapGesture {
-                                    audioPlayer.seek(toTime: TimeInterval(segment.start))
-                                    if !audioPlayer.isPlaying {
-                                        audioPlayer.togglePlayback()
-                                    }
-                                }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let speakerID = segment.speaker,
-                                   let speaker = transcript.speakers?[speakerID] {
-                                    Text(speaker.label)
-                                        .font(.caption2)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(colorForSpeaker(speakerID))
-                                }
-                                Text(segment.text)
-                                    .font(.body)
-                                    .textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .padding(.leading, 8)
-                    }
+                ForEach(currentSegments.indices, id: \.self) { idx in
+                    segmentRow(idx)
                 }
             }
             .padding(.horizontal, 48)
@@ -94,6 +64,7 @@ struct TranscriptView: View {
         }
         .onAppear {
             if let url = audioURL { audioPlayer.load(url: url) }
+            ensureDraftInitialized()
         }
         .onChange(of: audioURL) { _, newURL in
             if let url = newURL { audioPlayer.load(url: url) }
@@ -107,17 +78,148 @@ struct TranscriptView: View {
     }
 
     /// Seek the audio player to `target`, ensure playback is running, and scroll
-    /// the matching transcript segment into view.
+    /// the matching transcript segment into view. For imported sessions (no
+    /// audio file), only the scroll happens.
     private func performJump(to target: TimeInterval, scrollProxy: ScrollViewProxy) {
-        if audioURL != nil { audioPlayer.load(url: audioURL!) }
-        audioPlayer.seek(toTime: target)
-        if !audioPlayer.isPlaying { audioPlayer.togglePlayback() }
-
+        let isImported = transcript.source == .imported || audioURL == nil
+        if !isImported {
+            audioPlayer.load(url: audioURL!)
+            audioPlayer.seek(toTime: target)
+            if !audioPlayer.isPlaying { audioPlayer.togglePlayback() }
+        }
         if let segment = nearestSegment(to: target) {
             withAnimation(.easeInOut(duration: 0.25)) {
                 scrollProxy.scrollTo(segment.id, anchor: .center)
             }
         }
+    }
+
+    // MARK: - Per-segment rendering
+
+    private var currentSegments: [Transcript.Segment] {
+        transcript.source == .imported && hasInitializedDraft ? draftSegments : transcript.segments
+    }
+
+    @ViewBuilder
+    private func segmentRow(_ idx: Int) -> some View {
+        let segment = currentSegments[idx]
+        let isImported = transcript.source == .imported
+
+        HStack(alignment: .top, spacing: 0) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(isActiveSegment(segment) ? Color.accentColor : Color.clear)
+                .frame(width: 2)
+                .padding(.vertical, 2)
+
+            HStack(alignment: .top, spacing: 12) {
+                if segment.start > 0 || !isImported {
+                    Text(formatTimestamp(segment.start))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 50, alignment: .trailing)
+                        .monospacedDigit()
+                        .onTapGesture {
+                            if !isImported {
+                                audioPlayer.seek(toTime: TimeInterval(segment.start))
+                                if !audioPlayer.isPlaying { audioPlayer.togglePlayback() }
+                            }
+                        }
+                        .pointerHand()
+                } else {
+                    Color.clear.frame(width: 50)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    speakerLabelView(for: segment, idx: idx, isImported: isImported)
+                    if isImported {
+                        TextField("Segment text", text: editableTextBinding(for: idx), axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .onSubmit { commitDraft() }
+                    } else {
+                        Text(segment.text)
+                            .font(.body)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.leading, 8)
+        }
+        .id(segment.id)
+    }
+
+    @ViewBuilder
+    private func speakerLabelView(for segment: Transcript.Segment, idx: Int, isImported: Bool) -> some View {
+        if isImported {
+            TextField("Speaker", text: editableSpeakerBinding(for: idx))
+                .textFieldStyle(.plain)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(segment.speaker.flatMap { colorForSpeaker($0) } ?? .secondary)
+                .onSubmit { commitDraft() }
+        } else if let speakerID = segment.speaker,
+                  let speaker = transcript.speakers?[speakerID] {
+            Text(speaker.label)
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(colorForSpeaker(speakerID))
+        }
+    }
+
+    private func ensureDraftInitialized() {
+        guard !hasInitializedDraft, transcript.source == .imported else { return }
+        draftSegments = transcript.segments
+        hasInitializedDraft = true
+    }
+
+    private func editableTextBinding(for idx: Int) -> Binding<String> {
+        Binding(
+            get: {
+                draftSegments.indices.contains(idx) ? draftSegments[idx].text : ""
+            },
+            set: { newValue in
+                if draftSegments.indices.contains(idx), draftSegments[idx].text != newValue {
+                    draftSegments[idx].text = newValue
+                    scheduleCommit()
+                }
+            }
+        )
+    }
+
+    private func editableSpeakerBinding(for idx: Int) -> Binding<String> {
+        Binding(
+            get: {
+                draftSegments.indices.contains(idx) ? (draftSegments[idx].speaker ?? "") : ""
+            },
+            set: { newValue in
+                guard draftSegments.indices.contains(idx) else { return }
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                let next: String? = trimmed.isEmpty ? nil : trimmed
+                if draftSegments[idx].speaker != next {
+                    draftSegments[idx].speaker = next
+                    scheduleCommit()
+                }
+            }
+        )
+    }
+
+    @State private var commitWorkItem: DispatchWorkItem?
+
+    private func scheduleCommit() {
+        commitWorkItem?.cancel()
+        let work = DispatchWorkItem { commitDraft() }
+        commitWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    private func commitDraft() {
+        guard hasInitializedDraft else { return }
+        var updated = transcript
+        updated.segments = draftSegments
+        updated.editedAt = Date()
+        onEdit?(updated)
     }
 
     private func nearestSegment(to target: TimeInterval) -> Transcript.Segment? {
