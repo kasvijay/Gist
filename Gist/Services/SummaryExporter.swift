@@ -370,8 +370,7 @@ enum SummaryExporter {
             lines.append("")
             lines.append("KEY DISCUSSION POINTS (\(points.count))")
             for (i, item) in points.enumerated() {
-                let suffix = item.startSeconds.map { "  [\(formatTimestampLabel($0))]" } ?? ""
-                lines.append(String(format: "  %02d. %@%@", i + 1, item.text, suffix))
+                lines.append(String(format: "  %02d. %@", i + 1, item.text))
             }
         }
 
@@ -509,24 +508,11 @@ enum SummaryExporter {
             .foregroundColor: NSColor.labelColor,
             .paragraphStyle: bulletPara
         ]))
-        if let seconds = point.startSeconds {
-            line.append(string("  [\(formatTimestampLabel(seconds))]", attrs: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor.tertiaryLabelColor,
-                .paragraphStyle: bulletPara
-            ]))
-        }
+        // Timestamps are intentionally omitted from exports — they only live in
+        // the in-app Summary view, where they're tappable. Carrying them into
+        // Word / PDF / Plain Text / Copy adds noise without value.
         line.append(string("\n", attrs: [.paragraphStyle: bulletPara]))
         out.append(line)
-    }
-
-    private static func formatTimestampLabel(_ seconds: Float) -> String {
-        let total = max(Int(seconds.rounded()), 0)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        let s = total % 60
-        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
-        return String(format: "%d:%02d", m, s)
     }
 
     private static func appendSpacer(into out: NSMutableAttributedString) {
