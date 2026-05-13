@@ -196,34 +196,106 @@ final class AudioFileWriter: @unchecked Sendable {
 
     // MARK: - WAV to M4A Conversion
 
-    /// Convert a WAV file to AAC M4A for storage efficiency.
+    /// Convert a WAV file to AAC M4A using an explicit AVAssetWriter pipeline.
+    /// Bitrate is fixed at 64 kbps for mono, 96 kbps for stereo — high enough to
+    /// produce clean speech without telephone-call compression artifacts. Source
+    /// sample rate and channel count are preserved.
+    ///
+    /// The previous implementation used `AVAssetExportPresetAppleM4A`, which
+    /// silently picked very low bitrates (~16 kbps) for narrowband mono input
+    /// from Bluetooth wideband mics — producing the "robotic voice" symptom.
     /// Returns the M4A URL on success. The caller is responsible for deleting the WAV.
     static func convertToAAC(wavURL: URL, m4aURL: URL) async throws -> URL {
-        // Skip conversion for empty or very short WAV files
         let attrs = try FileManager.default.attributesOfItem(atPath: wavURL.path)
         let fileSize = attrs[.size] as? UInt64 ?? 0
-        if fileSize <= 44 {
-            throw ConversionError.invalidWAV
-        }
+        if fileSize <= 44 { throw ConversionError.invalidWAV }
 
         let asset = AVURLAsset(url: wavURL)
         let duration = try await asset.load(.duration)
-        guard duration.seconds > 0.1 else {
-            throw ConversionError.invalidWAV
+        guard duration.seconds > 0.1 else { throw ConversionError.invalidWAV }
+
+        let tracks = try await asset.loadTracks(withMediaType: .audio)
+        guard let track = tracks.first else { throw ConversionError.invalidWAV }
+
+        // Read the source format so we can preserve sample rate + channel count.
+        let formatDescs = try await track.load(.formatDescriptions)
+        guard let fmt = formatDescs.first,
+              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmt)?.pointee
+        else { throw ConversionError.invalidWAV }
+        let sampleRate = asbd.mSampleRate
+        let channels = max(1, min(Int(asbd.mChannelsPerFrame), 2))
+        let bitRate = channels == 1 ? 64_000 : 96_000
+
+        var outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVNumberOfChannelsKey: channels,
+            AVEncoderBitRateKey: bitRate,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+        ]
+        if sampleRate > 0 {
+            outputSettings[AVSampleRateKey] = sampleRate
         }
 
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-            throw ConversionError.exportSessionFailed
+        // Ensure a stale file doesn't block writer creation.
+        try? FileManager.default.removeItem(at: m4aURL)
+
+        let writer = try AVAssetWriter(outputURL: m4aURL, fileType: .m4a)
+        let writerInput = AVAssetWriterInput(mediaType: .audio, outputSettings: outputSettings)
+        writerInput.expectsMediaDataInRealTime = false
+        guard writer.canAdd(writerInput) else { throw ConversionError.exportFailed }
+        writer.add(writerInput)
+
+        // Decode the WAV to LPCM so the AAC encoder receives a clean stream.
+        let reader = try AVAssetReader(asset: asset)
+        let readerSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        let readerOutput = AVAssetReaderTrackOutput(track: track, outputSettings: readerSettings)
+        guard reader.canAdd(readerOutput) else { throw ConversionError.exportFailed }
+        reader.add(readerOutput)
+
+        guard writer.startWriting() else {
+            throw writer.error ?? ConversionError.exportFailed
+        }
+        writer.startSession(atSourceTime: .zero)
+        guard reader.startReading() else {
+            throw reader.error ?? ConversionError.exportFailed
         }
 
-        session.outputURL = m4aURL
-        session.outputFileType = .m4a
+        let queue = DispatchQueue(label: "com.vijaykas.gist.aac-export")
 
-        await session.export()
+        // Pump samples from reader → writer until the source is drained.
+        // The closure captures AVAssetWriter / Input / ReaderOutput which aren't
+        // Sendable; they're confined to `queue` so this is safe in practice.
+        nonisolated(unsafe) let captureWriter = writer
+        nonisolated(unsafe) let captureInput = writerInput
+        nonisolated(unsafe) let captureReaderOutput = readerOutput
 
-        if let error = session.error { throw error }
-        guard session.status == .completed else { throw ConversionError.exportFailed }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            captureInput.requestMediaDataWhenReady(on: queue) {
+                while captureInput.isReadyForMoreMediaData {
+                    if let sample = captureReaderOutput.copyNextSampleBuffer() {
+                        if !captureInput.append(sample) {
+                            captureInput.markAsFinished()
+                            captureWriter.finishWriting { cont.resume() }
+                            return
+                        }
+                    } else {
+                        captureInput.markAsFinished()
+                        captureWriter.finishWriting { cont.resume() }
+                        return
+                    }
+                }
+            }
+        }
 
+        if let readerErr = reader.error { throw readerErr }
+        if let writerErr = writer.error { throw writerErr }
+        guard writer.status == .completed else { throw ConversionError.exportFailed }
         return m4aURL
     }
 
