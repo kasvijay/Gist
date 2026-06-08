@@ -617,37 +617,49 @@ final class RecordingManager: ObservableObject {
 
     // MARK: - Recording Reminder Notifications
 
-    private static let reminderIdentifier = "com.vijaykas.gist.recording-reminder"
-    private static let reminderInterval: TimeInterval = 30 * 60 // 30 minutes
+    // First reminder at 30 min, then every 15 min thereafter (30, 45, 60, …).
+    // Pre-scheduled as one-shot triggers because UNTimeIntervalNotificationTrigger
+    // only supports a single fixed cadence when repeating. Capped at 6 hours
+    // (23 notifications) to stay well under the 64-pending system limit.
+    nonisolated private static let reminderIDPrefix = "com.vijaykas.gist.recording-reminder."
+    nonisolated private static let reminderFirstMinute = 30
+    nonisolated private static let reminderStepMinute = 15
+    nonisolated private static let reminderMaxMinute = 360
+
+    nonisolated private static var reminderMinuteMarks: [Int] {
+        Array(stride(from: reminderFirstMinute, through: reminderMaxMinute, by: reminderStepMinute))
+    }
 
     private func scheduleRecordingReminders() {
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = "Recording Still Active"
-            content.body = "Gist is still recording. Open the app to stop when you're done."
-            content.sound = .default
+            for minute in Self.reminderMinuteMarks {
+                let content = UNMutableNotificationContent()
+                content.title = "Recording Still Active"
+                content.body = "Gist has been recording for \(minute) minutes. Open the app to stop when you're done."
+                content.sound = .default
 
-            let trigger = UNTimeIntervalNotificationTrigger(
-                timeInterval: Self.reminderInterval,
-                repeats: true
-            )
-            let request = UNNotificationRequest(
-                identifier: Self.reminderIdentifier,
-                content: content,
-                trigger: trigger
-            )
-            center.add(request) { error in
-                if let error {
-                    self.logger.error("Failed to schedule recording reminder: \(error)")
+                let trigger = UNTimeIntervalNotificationTrigger(
+                    timeInterval: TimeInterval(minute * 60),
+                    repeats: false
+                )
+                let request = UNNotificationRequest(
+                    identifier: "\(Self.reminderIDPrefix)\(minute)",
+                    content: content,
+                    trigger: trigger
+                )
+                center.add(request) { error in
+                    if let error {
+                        self.logger.error("Failed to schedule \(minute)-min reminder: \(error)")
+                    }
                 }
             }
         }
     }
 
     private func cancelRecordingReminders() {
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: [Self.reminderIdentifier])
+        let ids = Self.reminderMinuteMarks.map { "\(Self.reminderIDPrefix)\($0)" }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
     }
 }

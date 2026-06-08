@@ -210,6 +210,79 @@ final class SessionStore: ObservableObject {
         return m4a
     }
 
+    // MARK: - Trim Backup
+
+    /// URL for the pre-trim audio backup. Present only when the user trimmed
+    /// the recording and the pipeline succeeded — kept until they choose to
+    /// discard it from the Transcript page.
+    func originalAudioFileURL(for sessionID: String) -> URL? {
+        guard let entry = sessions.first(where: { $0.id == sessionID }) else { return nil }
+        return baseURL.appendingPathComponent(entry.path).appendingPathComponent("audio.original.m4a")
+    }
+
+    func hasOriginalAudio(for sessionID: String) -> Bool {
+        guard let url = originalAudioFileURL(for: sessionID) else { return false }
+        return fileManager.fileExists(atPath: url.path)
+    }
+
+    /// Copies the current `audio.m4a` to `audio.original.m4a` so the trim
+    /// operation can restore on failure. Overwrites any pre-existing backup —
+    /// only one undo level is supported.
+    func backupAudio(for sessionID: String) throws {
+        guard let entry = sessions.first(where: { $0.id == sessionID }) else { return }
+        let folder = baseURL.appendingPathComponent(entry.path)
+        let src = folder.appendingPathComponent("audio.m4a")
+        let dest = folder.appendingPathComponent("audio.original.m4a")
+        guard fileManager.fileExists(atPath: src.path) else { return }
+        if fileManager.fileExists(atPath: dest.path) {
+            try fileManager.removeItem(at: dest)
+        }
+        try fileManager.copyItem(at: src, to: dest)
+    }
+
+    /// Move the backup back over `audio.m4a`. Used when a trim succeeded
+    /// but the post-trim pipeline failed and we want to revert.
+    func restoreOriginalAudio(for sessionID: String) throws {
+        guard let entry = sessions.first(where: { $0.id == sessionID }) else { return }
+        let folder = baseURL.appendingPathComponent(entry.path)
+        let backup = folder.appendingPathComponent("audio.original.m4a")
+        let active = folder.appendingPathComponent("audio.m4a")
+        guard fileManager.fileExists(atPath: backup.path) else { return }
+        if fileManager.fileExists(atPath: active.path) {
+            try fileManager.removeItem(at: active)
+        }
+        try fileManager.moveItem(at: backup, to: active)
+    }
+
+    /// Discard the backup — user is satisfied with the trim.
+    func deleteOriginalAudio(for sessionID: String) {
+        guard let url = originalAudioFileURL(for: sessionID),
+              fileManager.fileExists(atPath: url.path) else { return }
+        try? fileManager.removeItem(at: url)
+    }
+
+    /// Update durationSeconds in both the in-memory index entry and the
+    /// on-disk metadata.json. Called after a successful trim.
+    func updateDuration(_ seconds: Double, for sessionID: String) {
+        if let idx = sessions.firstIndex(where: { $0.id == sessionID }) {
+            sessions[idx].durationSeconds = seconds
+            writeIndex()
+        }
+        guard let entry = sessions.first(where: { $0.id == sessionID }) else { return }
+        let metaURL = baseURL
+            .appendingPathComponent(entry.path)
+            .appendingPathComponent("metadata.json")
+        Self.ioQueue.async {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let data = try? Data(contentsOf: metaURL),
+               var session = try? decoder.decode(Session.self, from: data) {
+                session.durationSeconds = seconds
+                Self.writeInBackground(session, to: metaURL)
+            }
+        }
+    }
+
     func metadataURL(for session: Session) -> URL {
         sessionFolderURL(for: session).appendingPathComponent("metadata.json")
     }

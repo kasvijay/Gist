@@ -19,6 +19,10 @@ struct SessionDetailView: View {
     @State private var copiedAt: Date?
     @State private var exportError: String?
     @State private var pendingJumpTime: TimeInterval?
+    @State private var showTrimSheet = false
+    @State private var isTrimming = false
+    @State private var trimError: String?
+    @State private var trimBackupTick: Int = 0
 
     var onStop: (() -> Void)?
 
@@ -106,6 +110,34 @@ struct SessionDetailView: View {
                     }
 
                     let isImported = transcript.source == .imported
+                    let canTrim = activeTab == .transcript && !isImported && audioURL(for: sessionID) != nil
+                    if canTrim {
+                        Button {
+                            showTrimSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "scissors")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("Trim")
+                                    .font(.system(size: 12.5, weight: .semibold))
+                            }
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9)
+                                    .fill(Color(.controlBackgroundColor))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 9)
+                                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain).pointerHand()
+                        .disabled(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording || isTrimming)
+                        .opacity(summarizationEngine.isWorking || recordingManager.isPipelineRunning || recordingManager.isRecording || isTrimming ? 0.5 : 1)
+                    }
+
                     if !(activeTab == .transcript && isImported) {
                     Button {
                         if activeTab == .transcript {
@@ -154,6 +186,11 @@ struct SessionDetailView: View {
                         entry: entry,
                         loadedSummary: loadedSummary,
                         audioURL: audioURL(for: sessionID),
+                        hasOriginalAudio: { _ = trimBackupTick; return sessionStore.hasOriginalAudio(for: sessionID) }(),
+                        onDeleteOriginalAudio: {
+                            sessionStore.deleteOriginalAudio(for: sessionID)
+                            trimBackupTick &+= 1
+                        },
                         jumpToTime: $pendingJumpTime,
                         onEdit: { updated in
                             sessionStore.saveEditedTranscript(updated, forSessionID: sessionID)
@@ -298,6 +335,43 @@ struct SessionDetailView: View {
                 )
             }
 
+            if showTrimSheet,
+               let url = audioURL(for: sessionID),
+               let entry = sessionStore.sessions.first(where: { $0.id == sessionID }),
+               let duration = entry.durationSeconds, duration > 0 {
+                TrimSelectionView(
+                    sessionName: entry.name,
+                    audioURL: url,
+                    totalDuration: duration,
+                    onConfirm: { startSec, endSec in
+                        showTrimSheet = false
+                        performTrim(
+                            sessionID: sessionID,
+                            sourceURL: url,
+                            startSeconds: startSec,
+                            endSeconds: endSec
+                        )
+                    },
+                    onClose: { showTrimSheet = false }
+                )
+            }
+
+            if isTrimming {
+                ZStack {
+                    Color.black.opacity(0.32).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        ProgressView().controlSize(.large)
+                        Text("Trimming audio…")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(28)
+                    .background(Color(.windowBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                }
+            }
+
             if showRetranscribeConfirm {
                 let registry = ProviderRegistry.shared
                 RetranscribeConfirmModal(
@@ -344,6 +418,81 @@ struct SessionDetailView: View {
             Button("OK", role: .cancel) { exportError = nil }
         } message: {
             Text(exportError ?? "")
+        }
+        .alert("Trim failed",
+               isPresented: Binding(get: { trimError != nil },
+                                    set: { if !$0 { trimError = nil } })) {
+            Button("OK", role: .cancel) { trimError = nil }
+        } message: {
+            Text(trimError ?? "")
+        }
+    }
+
+    // MARK: - Trim
+
+    private func performTrim(sessionID: String, sourceURL: URL, startSeconds: Double, endSeconds: Double) {
+        isTrimming = true
+        audioPlayer.stop()
+        let trimStartedAt = Date()
+
+        Task {
+            // 1. Back up the current audio so we can restore if the pipeline fails.
+            do {
+                try sessionStore.backupAudio(for: sessionID)
+            } catch {
+                isTrimming = false
+                trimError = "Couldn't back up the original audio: \(error.localizedDescription)"
+                return
+            }
+
+            // 2. Re-encode the trimmed range over audio.m4a.
+            do {
+                try await AudioTrimmer.trim(
+                    sourceURL: sourceURL,
+                    destinationURL: sourceURL,
+                    startSeconds: startSeconds,
+                    endSeconds: endSeconds
+                )
+            } catch {
+                // Restore the backup so the original audio is still intact.
+                try? sessionStore.restoreOriginalAudio(for: sessionID)
+                isTrimming = false
+                trimError = "Couldn't trim the audio: \(error.localizedDescription)"
+                return
+            }
+
+            // 3. Persist the new duration so the rest of the pipeline sees it.
+            let newDuration = max(0, endSeconds - startSeconds)
+            sessionStore.updateDuration(newDuration, for: sessionID)
+
+            isTrimming = false
+
+            // 4. Re-run the post-recording pipeline. The pipeline UI takes over.
+            guard let entry = sessionStore.sessions.first(where: { $0.id == sessionID }) else { return }
+            recordingManager.runPipeline(
+                for: entry,
+                sessionStore: sessionStore,
+                transcriptionEngine: transcriptionEngine,
+                diarizationManager: diarizationManager,
+                summarizationEngine: summarizationEngine
+            )
+
+            // 5. Wait for the pipeline to finish, then verify a fresh transcript
+            //    was produced. If not, restore the backup so the user keeps the
+            //    pre-trim audio + transcript intact.
+            await recordingManager.waitForPipeline()
+            if let updated = sessionStore.loadTranscript(for: sessionID),
+               updated.created >= trimStartedAt {
+                // Success — leave audio.original.m4a in place. The Transcript
+                // page surfaces a "Delete original audio" button while it
+                // exists.
+                trimBackupTick &+= 1
+            } else {
+                try? sessionStore.restoreOriginalAudio(for: sessionID)
+                sessionStore.updateDuration(await AudioTrimmer.duration(of: sourceURL), for: sessionID)
+                trimBackupTick &+= 1
+                trimError = "Trim finished, but regenerating the transcript failed. The original audio has been restored."
+            }
         }
     }
 

@@ -5,6 +5,8 @@ struct TranscriptView: View {
     var entry: SessionIndex.SessionEntry? = nil
     var loadedSummary: Summary? = nil
     var audioURL: URL? = nil
+    var hasOriginalAudio: Bool = false
+    var onDeleteOriginalAudio: (() -> Void)? = nil
     @Binding var jumpToTime: TimeInterval?
     var onEdit: ((Transcript) -> Void)? = nil
 
@@ -12,15 +14,21 @@ struct TranscriptView: View {
          entry: SessionIndex.SessionEntry? = nil,
          loadedSummary: Summary? = nil,
          audioURL: URL? = nil,
+         hasOriginalAudio: Bool = false,
+         onDeleteOriginalAudio: (() -> Void)? = nil,
          jumpToTime: Binding<TimeInterval?> = .constant(nil),
          onEdit: ((Transcript) -> Void)? = nil) {
         self.transcript = transcript
         self.entry = entry
         self.loadedSummary = loadedSummary
         self.audioURL = audioURL
+        self.hasOriginalAudio = hasOriginalAudio
+        self.onDeleteOriginalAudio = onDeleteOriginalAudio
         self._jumpToTime = jumpToTime
         self.onEdit = onEdit
     }
+
+    @State private var confirmDeleteOriginal = false
 
     @EnvironmentObject var audioPlayer: AudioPlayerService
     @State private var draftSegments: [Transcript.Segment] = []
@@ -49,6 +57,11 @@ struct TranscriptView: View {
                 // Waveform player strip — recorded sessions only
                 if transcript.source == .recorded, audioURL != nil {
                     WaveformStripView()
+                        .padding(.bottom, 14)
+                }
+
+                if hasOriginalAudio {
+                    originalAudioBanner
                         .padding(.bottom, 14)
                 }
 
@@ -276,6 +289,57 @@ struct TranscriptView: View {
             .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var originalAudioBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "tray.full")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Pre-trim audio kept as backup")
+                    .font(.system(size: 12.5, weight: .medium))
+                Text("Delete it once you're sure the new transcript looks right.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                confirmDeleteOriginal = true
+            } label: {
+                Text("Delete original")
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(Color(.controlBackgroundColor))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 7)
+                                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+            }
+            .buttonStyle(.plain).pointerHand()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.yellow.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.yellow.opacity(0.3), lineWidth: 1)
+                )
+        )
+        .alert("Delete the original audio?",
+               isPresented: $confirmDeleteOriginal) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { onDeleteOriginalAudio?() }
+        } message: {
+            Text("This permanently removes the pre-trim recording. The trimmed audio and the new transcript stay intact.")
+        }
     }
 
     private func formatTimestamp(_ seconds: Float) -> String {
