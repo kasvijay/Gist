@@ -191,6 +191,12 @@ final class RecordingPipeline: @unchecked Sendable {
         mic.onRecovered = { [weak self] in
             self?.onDeviceChanged?(true)
         }
+        // Recovery permanently failed. We deliberately keep `writer` running
+        // so the WAV captured so far stays intact — the user can stop the
+        // recording and we'll still have everything up to this point.
+        mic.onRecoveryFailed = { [weak self] in
+            self?.onDeviceChanged?(false)
+        }
 
         guard let format = mic.inputFormat else {
             throw MicrophoneCapture.CaptureError.invalidFormat

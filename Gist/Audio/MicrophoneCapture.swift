@@ -15,6 +15,11 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// Callback when mic successfully recovers after a device change
     var onRecovered: (() -> Void)?
 
+    /// Callback when mic recovery permanently fails. The audio file writer is
+    /// intentionally NOT torn down by this class — keeping it alive lets the
+    /// user stop the recording and retain everything captured up to this point.
+    var onRecoveryFailed: (() -> Void)?
+
     private var configObserver: NSObjectProtocol?
 
     /// Start using stored bufferHandler
@@ -27,73 +32,58 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// Start capturing microphone audio. Calls handler on the audio thread with PCM buffers.
     func start(bufferHandler: @escaping @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void) throws {
-        // Attempt strategies in order until one works:
-        // 1. Native format from inputNode
-        // 2. nil format (engine chooses) on a fresh engine
-        // 3. Explicit 48kHz mono on a fresh engine (safe fallback)
-
-        let strategies: [(String, AVAudioFormat?)] = {
-            var list: [(String, AVAudioFormat?)] = []
-
-            // Force graph initialization by touching mainMixerNode first
-            _ = engine.mainMixerNode
-            let native = engine.inputNode.outputFormat(forBus: 0)
-            if native.sampleRate > 0 && native.channelCount > 0 {
-                list.append(("native \(native.sampleRate)Hz/\(native.channelCount)ch", native))
-            }
-            list.append(("engine-chosen (nil)", nil))
-
-            if let fallback = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1) {
-                list.append(("48kHz mono fallback", fallback))
-            }
-            return list
-        }()
-
         var lastError: Error = CaptureError.invalidFormat
-
-        for (label, format) in strategies {
-            // Each retry gets a fresh engine — a failed engine.start() can leave
-            // the engine in a corrupted state that no amount of stop/removeTap fixes.
+        for attempt in 0..<3 {
+            // Each retry uses a fresh engine — a failed installTap or
+            // engine.start() can leave the engine in a corrupted state that
+            // no amount of stop/removeTap fixes.
             engine = AVAudioEngine()
             stopConfigurationChangeMonitoring()
 
-            // Touch mainMixerNode to force proper audio graph initialization
+            // Touch mainMixerNode to force proper audio graph initialization.
             _ = engine.mainMixerNode
             let inputNode = engine.inputNode
+            let nodeFormat = inputNode.outputFormat(forBus: 0)
 
-            // installTap throws NSException (not Swift error) on format mismatch,
-            // so validate channel count before attempting the tap.
-            if let fmt = format {
-                let nodeFormat = inputNode.outputFormat(forBus: 0)
-                if nodeFormat.sampleRate > 0 && fmt.channelCount != nodeFormat.channelCount {
-                    logger.warning("Skipping \(label): channel count mismatch (\(fmt.channelCount) vs \(nodeFormat.channelCount))")
-                    lastError = CaptureError.invalidFormat
-                    continue
-                }
+            // Validate the node's bus format BEFORE attempting the tap. A
+            // zero-rate format means the audio device isn't ready (mid-
+            // transition or no input). Bail and let the caller retry.
+            guard nodeFormat.sampleRate > 0, nodeFormat.channelCount > 0 else {
+                logger.warning("Mic start attempt \(attempt): node format invalid (sr=\(nodeFormat.sampleRate), ch=\(nodeFormat.channelCount))")
+                lastError = CaptureError.invalidFormat
+                continue
             }
 
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, time in
+            // Use nil format → engine picks the bus's current format itself.
+            // This is the only NSException-proof way; any explicit format we
+            // pick can race with a device change between read and install.
+            var tapError: NSError?
+            let installed = GistInstallAudioTap(inputNode, nil, 0, 4096, { buffer, time in
                 bufferHandler(buffer, time)
+            }, &tapError)
+            guard installed else {
+                logger.warning("Mic start attempt \(attempt): installTap raised \(tapError?.localizedDescription ?? "unknown") (bus format was \(nodeFormat.sampleRate)Hz/\(nodeFormat.channelCount)ch)")
+                lastError = tapError ?? CaptureError.invalidFormat
+                continue
             }
             engine.prepare()
 
-            do {
-                try engine.start()
-                // Success — read the actual format
-                inputFormat = format ?? inputNode.outputFormat(forBus: 0)
+            var startError: NSError?
+            let started = GistStartAudioEngine(engine, &startError)
+            if started {
+                inputFormat = inputNode.outputFormat(forBus: 0)
                 isCapturing = true
                 inputDeviceName = AVCaptureDevice.default(for: .audio)?.localizedName
                 startConfigurationChangeMonitoring()
 
                 let fmt = inputFormat!
-                logger.info("Mic capture started (\(label)): \(fmt.sampleRate)Hz, \(fmt.channelCount)ch, device: \(self.inputDeviceName ?? "unknown")")
+                logger.info("Mic capture started: \(fmt.sampleRate)Hz, \(fmt.channelCount)ch, device: \(self.inputDeviceName ?? "unknown")")
                 return
-            } catch {
-                logger.warning("Mic start failed with \(label): \(error.localizedDescription)")
-                engine.stop()
-                inputNode.removeTap(onBus: 0)
-                lastError = error
             }
+            logger.warning("Mic start attempt \(attempt): engine.start failed: \(startError?.localizedDescription ?? "unknown")")
+            engine.stop()
+            inputNode.removeTap(onBus: 0)
+            lastError = startError ?? CaptureError.invalidFormat
         }
 
         throw lastError
@@ -128,69 +118,63 @@ final class MicrophoneCapture: @unchecked Sendable {
     }
 
     private func handleConfigurationChange() {
-        guard isCapturing, let handler = bufferHandler else { return }
+        guard let handler = bufferHandler else { return }
 
         logger.warning("Audio configuration changed — restarting mic capture")
 
+        // Tear down the old engine. The downstream AudioFileWriter is NOT
+        // touched — anything captured so far stays in the WAV regardless of
+        // whether mic recovery succeeds. That's the "recording is preserved
+        // at all costs" guarantee.
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         stopConfigurationChangeMonitoring()
 
-        // Build format strategies — fresh engine per attempt (mirrors start())
-        // Try: new device's native format, engine-chosen (nil), 48kHz mono fallback
-        var strategies: [(String, AVAudioFormat?)] = []
-
-        // Read native format from a fresh engine to pick up the new device
-        let probeEngine = AVAudioEngine()
-        _ = probeEngine.mainMixerNode
-        let native = probeEngine.inputNode.outputFormat(forBus: 0)
-        if native.sampleRate > 0 && native.channelCount > 0 {
-            strategies.append(("native \(native.sampleRate)Hz/\(native.channelCount)ch", native))
-        }
-        strategies.append(("engine-chosen (nil)", nil))
-        if let fallback = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1) {
-            strategies.append(("48kHz mono fallback", fallback))
-        }
-
-        for (label, format) in strategies {
-            // Fresh engine per attempt — a failed installTap/start leaves the engine
-            // in a corrupted state that can't be reused.
+        for attempt in 0..<3 {
             engine = AVAudioEngine()
             _ = engine.mainMixerNode
             let inputNode = engine.inputNode
+            let nodeFormat = inputNode.outputFormat(forBus: 0)
 
-            // installTap throws NSException (not Swift error) on format mismatch,
-            // so we must validate the format before attempting the tap.
-            if let fmt = format {
-                let nodeFormat = inputNode.outputFormat(forBus: 0)
-                if nodeFormat.sampleRate > 0 && fmt.channelCount != nodeFormat.channelCount {
-                    logger.warning("Skipping \(label): channel count mismatch (\(fmt.channelCount) vs \(nodeFormat.channelCount))")
-                    continue
-                }
+            // Node format may briefly be 0/0 during a device hot-swap. Sleep
+            // a hair and retry — full bail-out happens after `attempt` ≥ 3.
+            guard nodeFormat.sampleRate > 0, nodeFormat.channelCount > 0 else {
+                logger.warning("Recovery attempt \(attempt): node format not yet valid")
+                Thread.sleep(forTimeInterval: 0.15)
+                continue
             }
 
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+            var tapError: NSError?
+            let installed = GistInstallAudioTap(inputNode, nil, 0, 4096, { buffer, _ in
                 handler(buffer)
+            }, &tapError)
+            guard installed else {
+                logger.warning("Recovery attempt \(attempt): installTap raised \(tapError?.localizedDescription ?? "unknown")")
+                continue
             }
             engine.prepare()
-            do {
-                try engine.start()
-                inputFormat = format ?? inputNode.outputFormat(forBus: 0)
+
+            var startError: NSError?
+            if GistStartAudioEngine(engine, &startError) {
+                inputFormat = inputNode.outputFormat(forBus: 0)
                 isCapturing = true
                 startConfigurationChangeMonitoring()
                 let fmt = inputFormat!
-                logger.info("Mic recovered after device change (\(label)): \(fmt.sampleRate)Hz, \(fmt.channelCount)ch")
+                logger.info("Mic recovered after device change: \(fmt.sampleRate)Hz, \(fmt.channelCount)ch")
                 onRecovered?()
                 return
-            } catch {
-                engine.stop()
-                inputNode.removeTap(onBus: 0)
-                logger.warning("Recovery attempt failed with \(label): \(error.localizedDescription)")
             }
+            engine.stop()
+            inputNode.removeTap(onBus: 0)
+            logger.warning("Recovery attempt \(attempt): engine.start failed: \(startError?.localizedDescription ?? "unknown")")
         }
 
-        logger.error("All mic recovery attempts failed")
+        logger.error("All mic recovery attempts failed — writer remains active so existing audio is preserved")
+        // Flip our local flag so any caller asking knows mic is dead, but
+        // do NOT propagate this down to AudioFileWriter. The writer keeps
+        // whatever's already on disk.
         isCapturing = false
+        onRecoveryFailed?()
     }
 
     enum CaptureError: LocalizedError {

@@ -174,6 +174,28 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Discard a just-created session that never actually captured audio
+    /// (e.g. mic setup threw before the writer started). Without this the
+    /// folder + .recording metadata sit on disk and look like a real crashed
+    /// recording on next launch, surfacing an audio-less ghost session.
+    /// Safe to call only before any audio file has been written for this session.
+    func discardEmptySession(_ session: Session) {
+        let folder = sessionFolderURL(for: session)
+        if fileManager.fileExists(atPath: folder.path) {
+            do {
+                try fileManager.removeItem(at: folder)
+                logger.info("Discarded empty session folder: \(session.id)")
+            } catch {
+                logger.error("Failed to discard empty session folder \(session.id): \(error)")
+            }
+        }
+        sessions.removeAll { $0.id == session.id }
+        writeIndex()
+        if currentSession?.id == session.id {
+            currentSession = nil
+        }
+    }
+
     func finishSession(duration: TimeInterval) {
         guard var session = currentSession else { return }
         session.endedAt = Date()

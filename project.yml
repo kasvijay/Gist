@@ -51,6 +51,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Gist/Gist.entitlements
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+        SWIFT_OBJC_BRIDGING_HEADER: Gist/Gist-Bridging-Header.h
+        CLANG_ENABLE_OBJC_ARC: YES
 
   GistTests:
     type: bundle.unit-test

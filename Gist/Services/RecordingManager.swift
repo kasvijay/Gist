@@ -180,6 +180,10 @@ final class RecordingManager: ObservableObject {
                 capturedPipeline.stop()
                 self.error = error.localizedDescription
                 self.logger.error("Failed to start recording: \(error)")
+                // Pipeline never reached writer.start, so no audio is on disk.
+                // Discard the metadata-only session folder so CrashRecovery
+                // doesn't surface an audio-less ghost on next launch.
+                sessionStore.discardEmptySession(session)
             }
         }
     }

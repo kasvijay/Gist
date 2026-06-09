@@ -59,6 +59,7 @@
 		7A1A0043B25F284EE6E1FB39 /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F450E0540338CCEF3CD0C134 /* SummaryView.swift */; };
 		7A565DE9DCA40B7F046F2B1B /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D3190E5DA7D7E432D3D465 /* Session.swift */; };
 		7D4596832DAD31EEB93DB924 /* RegenerateShimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019FFE0B073701E48276F31 /* RegenerateShimmer.swift */; };
+		8279142C72C486841853A09C /* SafeAudioBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = EC5F08247167FE9B52DC2343 /* SafeAudioBridge.m */; };
 		8449A27A95BFFB68C1209E22 /* SummaryExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 218CD297AEE85CBAB4534B45 /* SummaryExporterTests.swift */; };
 		849C05DDA5E7182D449B9672 /* TrimSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7814B8A2769A1095A8F126D9 /* TrimSelectionView.swift */; };
 		8626FB56D9BD3A9B87BD5090 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A827A2DA0AAA1C828BEB1849 /* ProviderRegistry.swift */; };
@@ -145,6 +146,7 @@
 		5520231827EDA95543457B1A /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		55A196C6B47D0C565A397D61 /* LocalMLXProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMLXProvider.swift; sourceTree = "<group>"; };
 		562F89D8A65DDEBFF51CFDF8 /* TranscriptionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionEngine.swift; sourceTree = "<group>"; };
+		56B84E1825467003D22A0F1C /* Gist-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Gist-Bridging-Header.h"; sourceTree = "<group>"; };
 		576A89146CB3CE8E308B9D15 /* SummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryTests.swift; sourceTree = "<group>"; };
 		5CE0B37CB4B5C1B6133DA21D /* SummarizationParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummarizationParsingTests.swift; sourceTree = "<group>"; };
 		5EB9E5A6A52CDD340B6B3E96 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
@@ -187,6 +189,7 @@
 		B64ACEB11D7D88F18B5EA1F4 /* WaveformSamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformSamples.swift; sourceTree = "<group>"; };
 		BBB6952791515D501F5EDE38 /* Gist.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Gist.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DED41136663D725677CA56 /* AssemblyAIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssemblyAIProvider.swift; sourceTree = "<group>"; };
+		C394A2A9A4781D99767BFEC7 /* SafeAudioBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SafeAudioBridge.h; sourceTree = "<group>"; };
 		C54AD254FC875E43532907BC /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		C91EFCE5D64E282C8C6F6F43 /* OpenAIWhisperProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIWhisperProvider.swift; sourceTree = "<group>"; };
 		CD1567B5D541D2E0C1EE7AE7 /* NormalizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NormalizerTests.swift; sourceTree = "<group>"; };
@@ -206,6 +209,7 @@
 		EAF7813186FDCB5F46191E14 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		EB4705B7E9991760D36B6D36 /* StreamAccumulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamAccumulator.swift; sourceTree = "<group>"; };
 		EB64BECC6ED24BC410E3B332 /* GoogleGeminiProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleGeminiProvider.swift; sourceTree = "<group>"; };
+		EC5F08247167FE9B52DC2343 /* SafeAudioBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SafeAudioBridge.m; sourceTree = "<group>"; };
 		ED7145004BB21A8BF1DF5192 /* AudioSharedStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSharedStateTests.swift; sourceTree = "<group>"; };
 		EE420D8FD6B218398447C505 /* Speaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speaker.swift; sourceTree = "<group>"; };
 		F019FFE0B073701E48276F31 /* RegenerateShimmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegenerateShimmer.swift; sourceTree = "<group>"; };
@@ -282,6 +286,8 @@
 				9107425C18E6B3DFB1B8EDF1 /* MicrophoneCapture.swift */,
 				A3A9581E8FA15718EE2E56CD /* Normalizer.swift */,
 				D1450C9D7A703C2FF530890E /* RecordingPipeline.swift */,
+				C394A2A9A4781D99767BFEC7 /* SafeAudioBridge.h */,
+				EC5F08247167FE9B52DC2343 /* SafeAudioBridge.m */,
 				65CF4D32731FA2525B2B5733 /* SystemAudioCapture.swift */,
 				B64ACEB11D7D88F18B5EA1F4 /* WaveformSamples.swift */,
 			);
@@ -436,6 +442,7 @@
 			isa = PBXGroup;
 			children = (
 				0DA21153850CA822DB51DA31 /* Assets.xcassets */,
+				56B84E1825467003D22A0F1C /* Gist-Bridging-Header.h */,
 				7AFE33C74EEB6ABEAEE0098C /* Gist.entitlements */,
 				E5418EF3934589031110AD29 /* GistApp.swift */,
 				890C14CAD51FFD608528B80D /* Info.plist */,
@@ -665,6 +672,7 @@
 				A042C95C4828B002F9E832A0 /* RegenerateConfirmModal.swift in Sources */,
 				7D4596832DAD31EEB93DB924 /* RegenerateShimmer.swift in Sources */,
 				73A384D2669AF7350FCCC88E /* RetranscribeConfirmModal.swift in Sources */,
+				8279142C72C486841853A09C /* SafeAudioBridge.m in Sources */,
 				7A565DE9DCA40B7F046F2B1B /* Session.swift in Sources */,
 				B7A18185E30283BCFDC0A2EB /* SessionDetailView.swift in Sources */,
 				B20C09101783BCF34A06B7A8 /* SessionIndex.swift in Sources */,
@@ -832,6 +840,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Gist/Gist.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -848,6 +857,7 @@
 				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vijaykas.gist;
 				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "Gist/Gist-Bridging-Header.h";
 			};
 			name = Debug;
 		};
@@ -855,6 +865,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Gist/Gist.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -871,6 +882,7 @@
 				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vijaykas.gist;
 				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "Gist/Gist-Bridging-Header.h";
 			};
 			name = Release;
 		};
