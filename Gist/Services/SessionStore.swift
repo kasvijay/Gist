@@ -23,7 +23,7 @@ final class SessionStore: ObservableObject {
 
     /// Serial queue for all disk I/O — keeps writes off the main thread.
     private nonisolated static let ioQueue = DispatchQueue(label: "com.vijaykas.gist.sessionstore.io", qos: .utility)
-    private static let ioLogger = Logger(subsystem: "com.vijaykas.gist", category: "SessionStore.IO")
+    private nonisolated static let ioLogger = Logger(subsystem: "com.vijaykas.gist", category: "SessionStore.IO")
 
     /// Encode and write a Codable value to disk on the background I/O queue.
     private nonisolated static func writeInBackground<T: Encodable & Sendable>(_ value: T, to url: URL) {
