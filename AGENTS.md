@@ -11,7 +11,7 @@ open Gist.xcodeproj
 
 Build: Cmd+B. Run: Cmd+R. Test: Cmd+U.
 
-CI uses Xcode 16.2 (macOS 15 SDK). Local dev may use a newer Xcode — don't assume a local Release build validates the CI build.
+CI uses Xcode 16.4 (Swift 6.1, macOS 15 SDK). Local dev may use a newer Xcode — don't assume a local Release build validates the CI build.
 
 ## Release
 
@@ -102,7 +102,7 @@ Use asset catalog only — no `.icns` file, no `CFBundleIconFile` in Info.plist.
 
 ## GitHub Actions
 
-- `macos-15` runner with `sudo xcode-select -s /Applications/Xcode_16.2.app`
+- `macos-15` runner with `sudo xcode-select -s /Applications/Xcode_16.4.app`
 - `xcodebuild -resolvePackageDependencies` step before build
 - Enable Settings → Actions → General → Workflow permissions → Read and write
 
