@@ -36,12 +36,23 @@ final class RecordingPipeline: @unchecked Sendable {
     private var inputDeviceListenerBlock: AudioObjectPropertyListenerBlock?
     private var outputDeviceListenerBlock: AudioObjectPropertyListenerBlock?
 
+    // System audio liveness watchdog. The Core Audio tap can silently stop
+    // firing its IO proc after an output device/format change (AirPods profile
+    // switch) without a default-device-changed notification. A live tap
+    // delivers buffers continuously (silence included), so a stale append time
+    // reliably means the tap died — at which point we rebuild it.
+    private let systemRestartQueue = DispatchQueue(label: "com.vijaykas.gist.systemAudioRestart")
+    private var systemWatchdog: DispatchSourceTimer?
+    private var pendingSystemRestart: DispatchWorkItem?
+    private static let systemStaleThresholdNanos: UInt64 = 2_000_000_000  // 2s without a buffer = dead
+
     // Pause and mic mute state — accessed from audio threads via lock
     private let controlLock = NSLock()
     private var _isPaused = false
     private var _isMicMuted = false
     private var _levelCallbackCount = 0
     private var _lastSystemRMS: Float = 0
+    private var _lastSystemAppendNanos: UInt64 = 0
 
     func setPaused(_ paused: Bool) {
         controlLock.lock()
@@ -80,6 +91,9 @@ final class RecordingPipeline: @unchecked Sendable {
             let capturedControlLock = controlLock
             systemCapture.bufferHandler = { [weak self, mixer, state] bufferList in
                 capturedControlLock.lock()
+                // Mark the tap alive on every IO proc call (even silent buffers)
+                // so the watchdog can tell "no audio playing" from "tap died".
+                self?._lastSystemAppendNanos = DispatchTime.now().uptimeNanoseconds
                 let paused = self?._isPaused ?? false
                 capturedControlLock.unlock()
                 if paused { return }
@@ -98,6 +112,9 @@ final class RecordingPipeline: @unchecked Sendable {
             }
             try systemCapture.start()
             systemAudioActive = true
+            controlLock.lock()
+            _lastSystemAppendNanos = DispatchTime.now().uptimeNanoseconds
+            controlLock.unlock()
             logger.info("System audio capture active")
         } catch {
             logger.info("System audio not available: \(error.localizedDescription)")
@@ -213,17 +230,28 @@ final class RecordingPipeline: @unchecked Sendable {
         }
 
         startDeviceChangeMonitoring()
+        if systemAudioActive {
+            startSystemWatchdog()
+        }
 
         logger.info("Recording pipeline started, systemAudio: \(self.systemAudioActive)")
     }
 
     func stop() {
         stopDeviceChangeMonitoring()
+        stopSystemWatchdog()
+        // Gate restarts off, cancel any pending one, then drain the restart
+        // queue so an in-flight rebuild can't race systemCapture.stop().
+        systemAudioActive = false
+        controlLock.lock()
+        pendingSystemRestart?.cancel()
+        pendingSystemRestart = nil
+        controlLock.unlock()
+        systemRestartQueue.sync { }
         mic.stop()
         systemCapture.stop()
         writer.finish()
         state.reset()
-        systemAudioActive = false
         onDeviceChanged = nil
         onAudioLevels = nil
         controlLock.lock()
@@ -231,6 +259,7 @@ final class RecordingPipeline: @unchecked Sendable {
         _isMicMuted = false
         _levelCallbackCount = 0
         _lastSystemRMS = 0
+        _lastSystemAppendNanos = 0
         controlLock.unlock()
     }
 
@@ -260,6 +289,67 @@ final class RecordingPipeline: @unchecked Sendable {
         writer.append(buffer: outBuf)
     }
 
+    // MARK: - System Audio Liveness & Recovery
+
+    /// Periodically check that the system tap is still delivering buffers.
+    /// If it has gone silent (no IO proc call within the stale threshold) while
+    /// system capture is supposed to be active, rebuild the tap. This catches
+    /// the case where an output format switch kills the tap without changing
+    /// the default output device (so the device-change listener never fires).
+    private func startSystemWatchdog() {
+        let timer = DispatchSource.makeTimerSource(queue: systemRestartQueue)
+        timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
+        timer.setEventHandler { [weak self] in
+            guard let self, self.systemAudioActive else { return }
+            self.controlLock.lock()
+            let last = self._lastSystemAppendNanos
+            self.controlLock.unlock()
+            let now = DispatchTime.now().uptimeNanoseconds
+            if last != 0, now > last, now - last > Self.systemStaleThresholdNanos {
+                self.logger.warning("System audio tap went silent — rebuilding")
+                self.restartSystemAudio()
+            }
+        }
+        systemWatchdog = timer
+        timer.resume()
+    }
+
+    private func stopSystemWatchdog() {
+        systemWatchdog?.cancel()
+        systemWatchdog = nil
+    }
+
+    /// Debounced restart — a single routing change emits a burst of
+    /// notifications, so collapse them into one rebuild.
+    private func scheduleSystemAudioRestart() {
+        guard systemAudioActive else { return }
+        let work = DispatchWorkItem { [weak self] in self?.restartSystemAudio() }
+        controlLock.lock()
+        pendingSystemRestart?.cancel()
+        pendingSystemRestart = work
+        controlLock.unlock()
+        systemRestartQueue.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    /// Rebuild the system tap against the current output device. Runs on
+    /// `systemRestartQueue` so HAL teardown never blocks an audio thread.
+    /// On failure the recording is preserved — the mic callback just falls
+    /// back to writing mic-only buffers until the next recovery attempt.
+    private func restartSystemAudio() {
+        guard systemAudioActive else { return }
+        // Bump liveness so the watchdog grants the new tap a grace period to
+        // start delivering before judging it stale again — rate-limits retries.
+        controlLock.lock()
+        _lastSystemAppendNanos = DispatchTime.now().uptimeNanoseconds
+        controlLock.unlock()
+        do {
+            try systemCapture.restart()
+            logger.info("System audio capture restarted after device change")
+        } catch {
+            logger.error("System audio restart failed: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Audio Device Change Monitoring
 
     private func startDeviceChangeMonitoring() {
@@ -278,6 +368,10 @@ final class RecordingPipeline: @unchecked Sendable {
             self?.logger.warning("Audio device changed during recording")
             // Report as not-yet-recovered; mic will fire onRecovered if it succeeds
             self?.onDeviceChanged?(false)
+            // The default output device changed — the system tap's aggregate
+            // device is now likely orphaned. Rebuild it (debounced, since a
+            // single routing change emits a burst of notifications).
+            self?.scheduleSystemAudioRestart()
         }
 
         inputDeviceListenerBlock = handler

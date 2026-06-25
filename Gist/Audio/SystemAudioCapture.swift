@@ -126,6 +126,19 @@ final class SystemAudioCapture: @unchecked Sendable {
         logger.info("System audio capture started")
     }
 
+    /// Tear down the tap/aggregate/IO proc and rebuild against the *current*
+    /// default output device. The aggregate device is bound to the output
+    /// devices present at `start()`; when the output device or its format
+    /// changes mid-recording (e.g. AirPods switching from A2DP to the
+    /// hands-free profile when the mic opens), the aggregate device is
+    /// orphaned and the IO proc silently stops firing. Rebuilding restores it.
+    /// The `bufferHandler` is preserved across the restart.
+    func restart() throws {
+        logger.warning("Restarting system audio capture")
+        stop()
+        try start()
+    }
+
     func stop() {
         guard isCapturing else { return }
 
