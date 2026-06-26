@@ -5,18 +5,14 @@ import XCTest
 final class SummarizationParsingTests: XCTestCase {
     private var engine: SummarizationEngine!
 
-    override func setUp() {
-        super.setUp()
-        MainActor.assumeIsolated {
-            engine = SummarizationEngine()
-        }
+    // async (no super) keeps these @MainActor-isolated under Swift 6.1 without
+    // sending non-Sendable XCTestCase self across an actor boundary.
+    override func setUp() async throws {
+        engine = SummarizationEngine()
     }
 
-    override func tearDown() {
-        MainActor.assumeIsolated {
-            engine = nil
-        }
-        super.tearDown()
+    override func tearDown() async throws {
+        engine = nil
     }
 
     // MARK: - formatTranscript (now lives on SummaryPromptBuilder; includes [mm:ss])

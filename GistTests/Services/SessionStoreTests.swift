@@ -5,22 +5,18 @@ import XCTest
 final class SessionStoreTests: XCTestCase {
     private var store: SessionStore!
 
-    override func setUp() {
-        super.setUp()
-        MainActor.assumeIsolated {
-            store = SessionStore()
-        }
+    // async (no super) keeps these @MainActor-isolated under Swift 6.1 without
+    // sending non-Sendable XCTestCase self across an actor boundary.
+    override func setUp() async throws {
+        store = SessionStore()
     }
 
-    override func tearDown() {
-        MainActor.assumeIsolated {
-            // Clean up any test sessions we created
-            if let session = store.currentSession {
-                store.deleteSession(id: session.id)
-            }
-            store = nil
+    override func tearDown() async throws {
+        // Clean up any test sessions we created
+        if let session = store.currentSession {
+            store.deleteSession(id: session.id)
         }
-        super.tearDown()
+        store = nil
     }
 
     // MARK: - startSession

@@ -5,18 +5,14 @@ import XCTest
 final class RecordingManagerTests: XCTestCase {
     private var manager: RecordingManager!
 
-    override func setUp() {
-        super.setUp()
-        MainActor.assumeIsolated {
-            manager = RecordingManager()
-        }
+    // async (no super) keeps these @MainActor-isolated under Swift 6.1 without
+    // sending non-Sendable XCTestCase self across an actor boundary.
+    override func setUp() async throws {
+        manager = RecordingManager()
     }
 
-    override func tearDown() {
-        MainActor.assumeIsolated {
-            manager = nil
-        }
-        super.tearDown()
+    override func tearDown() async throws {
+        manager = nil
     }
 
     // MARK: - Initial State

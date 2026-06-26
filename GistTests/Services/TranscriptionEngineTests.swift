@@ -5,18 +5,14 @@ import XCTest
 final class TranscriptionEngineTests: XCTestCase {
     private var engine: TranscriptionEngine!
 
-    override func setUp() {
-        super.setUp()
-        MainActor.assumeIsolated {
-            engine = TranscriptionEngine()
-        }
+    // async (no super) keeps these @MainActor-isolated under Swift 6.1 without
+    // sending non-Sendable XCTestCase self across an actor boundary.
+    override func setUp() async throws {
+        engine = TranscriptionEngine()
     }
 
-    override func tearDown() {
-        MainActor.assumeIsolated {
-            engine = nil
-        }
-        super.tearDown()
+    override func tearDown() async throws {
+        engine = nil
     }
 
     // MARK: - Initial State

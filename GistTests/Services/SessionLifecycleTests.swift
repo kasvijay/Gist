@@ -10,19 +10,15 @@ final class SessionLifecycleTests: XCTestCase {
     private var store: SessionStore!
     private var sessionID: String?
 
-    override func setUp() {
-        super.setUp()
-        MainActor.assumeIsolated {
-            store = SessionStore()
-        }
+    // async (no super) keeps these @MainActor-isolated under Swift 6.1 without
+    // sending non-Sendable XCTestCase self across an actor boundary.
+    override func setUp() async throws {
+        store = SessionStore()
     }
 
-    override func tearDown() {
-        MainActor.assumeIsolated {
-            if let id = sessionID { store.deleteSession(id: id) }
-            store = nil
-        }
-        super.tearDown()
+    override func tearDown() async throws {
+        if let id = sessionID { store.deleteSession(id: id) }
+        store = nil
     }
 
     /// Spin the run loop until `condition` is true or the timeout elapses.
