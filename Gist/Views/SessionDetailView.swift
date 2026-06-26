@@ -24,6 +24,10 @@ struct SessionDetailView: View {
     @State private var trimError: String?
     @State private var trimBackupTick: Int = 0
 
+    @StateObject private var find = FindController()
+    @FocusState private var findFieldFocused: Bool
+    @State private var findDebounce: DispatchWorkItem?
+
     var onStop: (() -> Void)?
 
     var body: some View {
@@ -57,12 +61,49 @@ struct SessionDetailView: View {
             summarizationEngine.currentSummary = nil
             summarizationEngine.streamingText = ""
             audioPlayer.stop()
+            find.close()
         }
         .onChange(of: activeTab) { _, newTab in
             if newTab != .transcript {
                 audioPlayer.pause()
             }
         }
+    }
+
+    // MARK: - Find (Cmd+F)
+
+    /// Hidden zero-size button that gives the detail view a Cmd+F shortcut to open
+    /// and focus the find bar. Scoped to `savedSessionView` so it's only live when a
+    /// transcript/summary is on screen.
+    private var findShortcutButton: some View {
+        Button("") {
+            find.open()
+            findFieldFocused = true
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// Recompute matches for the screen currently shown.
+    private func recomputeFind(transcript: Transcript, summary: Summary?) {
+        let elements: [FindElement]
+        switch activeTab {
+        case .transcript:
+            elements = FindIndexBuilder.elements(forTranscript: transcript)
+        case .summary:
+            elements = summary.map { FindIndexBuilder.elements(forSummary: $0) } ?? []
+        }
+        find.recompute(elements: elements)
+    }
+
+    /// Debounced recompute used while the user is typing (~150 ms).
+    private func scheduleFindRecompute(transcript: Transcript, summary: Summary?) {
+        findDebounce?.cancel()
+        let work = DispatchWorkItem { recomputeFind(transcript: transcript, summary: summary) }
+        findDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
     // MARK: - Saved Session
@@ -179,47 +220,78 @@ struct SessionDetailView: View {
                 Divider()
 
                 // Content — scroll area spans full width, content centered inside
-                switch activeTab {
-                case .transcript:
-                    TranscriptView(
-                        transcript: transcript,
-                        entry: entry,
-                        loadedSummary: loadedSummary,
-                        audioURL: audioURL(for: sessionID),
-                        hasOriginalAudio: { _ = trimBackupTick; return sessionStore.hasOriginalAudio(for: sessionID) }(),
-                        onDeleteOriginalAudio: {
-                            sessionStore.deleteOriginalAudio(for: sessionID)
-                            trimBackupTick &+= 1
-                        },
-                        jumpToTime: $pendingJumpTime,
-                        onEdit: { updated in
-                            sessionStore.saveEditedTranscript(updated, forSessionID: sessionID)
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .summary:
-                    SummaryView(
-                        summary: loadedSummary,
-                        streamingText: summarizingSessionID == sessionID ? summarizationEngine.streamingText : "",
-                        isLoading: summarizingSessionID == sessionID && summarizationEngine.isWorking,
-                        statusMessage: summarizationEngine.statusMessage,
-                        entry: entry,
-                        transcript: transcript,
-                        onRegenerate: nil,
-                        onCancel: {
-                            summarizationEngine.cancel()
-                        },
-                        onJumpToTime: { time in
-                            activeTab = .transcript
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                pendingJumpTime = time
+                ZStack(alignment: .top) {
+                    switch activeTab {
+                    case .transcript:
+                        TranscriptView(
+                            transcript: transcript,
+                            entry: entry,
+                            loadedSummary: loadedSummary,
+                            audioURL: audioURL(for: sessionID),
+                            hasOriginalAudio: { _ = trimBackupTick; return sessionStore.hasOriginalAudio(for: sessionID) }(),
+                            onDeleteOriginalAudio: {
+                                sessionStore.deleteOriginalAudio(for: sessionID)
+                                trimBackupTick &+= 1
+                            },
+                            jumpToTime: $pendingJumpTime,
+                            onEdit: { updated in
+                                sessionStore.saveEditedTranscript(updated, forSessionID: sessionID)
+                            },
+                            find: find
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    case .summary:
+                        SummaryView(
+                            summary: loadedSummary,
+                            streamingText: summarizingSessionID == sessionID ? summarizationEngine.streamingText : "",
+                            isLoading: summarizingSessionID == sessionID && summarizationEngine.isWorking,
+                            statusMessage: summarizationEngine.statusMessage,
+                            entry: entry,
+                            transcript: transcript,
+                            onRegenerate: nil,
+                            onCancel: {
+                                summarizationEngine.cancel()
+                            },
+                            onJumpToTime: { time in
+                                activeTab = .transcript
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                    pendingJumpTime = time
+                                }
+                            },
+                            onRegenerateAfterEdit: {
+                                showRegenerateConfirm = true
+                            },
+                            find: find
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+
+                    if find.isActive {
+                        FindBar(
+                            find: find,
+                            focused: $findFieldFocused,
+                            onNext: { find.next() },
+                            onPrevious: { find.previous() },
+                            onClose: {
+                                find.close()
+                                findFieldFocused = false
                             }
-                        },
-                        onRegenerateAfterEdit: {
-                            showRegenerateConfirm = true
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        )
+                        .padding(.top, 12)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .background(findShortcutButton)
+                .onChange(of: find.query) {
+                    scheduleFindRecompute(transcript: transcript, summary: loadedSummary)
+                }
+                .onChange(of: activeTab) {
+                    recomputeFind(transcript: transcript, summary: loadedSummary)
+                }
+                .onChange(of: find.isActive) {
+                    if find.isActive {
+                        recomputeFind(transcript: transcript, summary: loadedSummary)
+                    }
                 }
             } else {
                 // No transcript yet

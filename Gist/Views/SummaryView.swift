@@ -11,8 +11,15 @@ struct SummaryView: View {
     var onCancel: (() -> Void)? = nil
     var onJumpToTime: ((TimeInterval) -> Void)? = nil
     var onRegenerateAfterEdit: (() -> Void)? = nil
+    @ObservedObject var find: FindController
+
+    /// Highlighted text for a summary block, tinting the current match strongly.
+    private func highlighted(_ text: String, _ anchor: SummaryAnchor) -> AttributedString {
+        FindHighlighter.attributed(text, query: find.query, currentOccurrence: find.currentOccurrence(forAnchor: anchor))
+    }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Session header (inside scroll area for full-width scrolling)
@@ -77,6 +84,13 @@ struct SummaryView: View {
             .padding(.bottom, 60)
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
+        }
+        .onChange(of: find.scrollNonce) {
+            guard let anchor = find.currentMatch?.anchor, anchor.base is SummaryAnchor else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(anchor, anchor: .center)
+            }
+        }
         }
     }
 
@@ -169,20 +183,21 @@ struct SummaryView: View {
         // 2. Overview narrative section
         if let overview = summary.overview, !overview.isEmpty {
             sectionHeader(title: "OVERVIEW")
-            Text(overview)
+            Text(highlighted(overview, .overview))
                 .font(.body)
                 .foregroundStyle(.primary.opacity(0.85))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .id(SummaryAnchor.overview)
         }
 
         // 3. Decisions
         if let decisions = summary.decisions, !decisions.isEmpty {
             sectionHeader(title: "DECISIONS", count: decisions.count, countLabel: "made")
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(decisions, id: \.self) { item in
-                    checkmarkItem(item)
+                ForEach(Array(decisions.enumerated()), id: \.offset) { index, item in
+                    checkmarkItem(item, anchor: .decision(index))
                 }
             }
         }
@@ -191,8 +206,8 @@ struct SummaryView: View {
         if let actions = summary.actionItems, !actions.isEmpty {
             sectionHeader(title: "ACTION ITEMS", count: actions.count)
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(actions, id: \.self) { item in
-                    actionItem(item)
+                ForEach(Array(actions.enumerated()), id: \.offset) { index, item in
+                    actionItem(item, anchor: .action(index))
                 }
             }
         }
@@ -227,17 +242,19 @@ struct SummaryView: View {
         if !overviewText.isEmpty {
             blockquote(overviewText)
             sectionHeader(title: "OVERVIEW")
-            Text(overviewText)
+            Text(highlighted(overviewText, .overview))
                 .font(.body)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .id(SummaryAnchor.overview)
         }
 
         if overviewText.isEmpty {
-            Text(summary.content)
+            Text(highlighted(summary.content, .fallback))
                 .font(.body)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .id(SummaryAnchor.fallback)
         }
     }
 
@@ -250,7 +267,7 @@ struct SummaryView: View {
                 .foregroundStyle(Color.secondary.opacity(0.3))
                 .padding(.bottom, -12)
 
-            Text(text)
+            Text(highlighted(text, .blockquote))
                 .font(.system(size: 14))
                 .foregroundStyle(.primary.opacity(0.8))
                 .lineSpacing(4)
@@ -262,6 +279,7 @@ struct SummaryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.separatorColor).opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .id(SummaryAnchor.blockquote)
     }
 
     // MARK: - Section Header
@@ -291,40 +309,43 @@ struct SummaryView: View {
 
     // MARK: - Item Styles
 
-    private func checkmarkItem(_ text: String) -> some View {
+    private func checkmarkItem(_ text: String, anchor: SummaryAnchor) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.system(size: 15))
                 .padding(.top, 1)
-            Text(text)
+            Text(highlighted(text, anchor))
                 .font(.body)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .id(anchor)
     }
 
-    private func actionItem(_ text: String) -> some View {
+    private func actionItem(_ text: String, anchor: SummaryAnchor) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "circle")
                 .foregroundStyle(.orange)
                 .font(.system(size: 15))
                 .padding(.top, 1)
-            Text(text)
+            Text(highlighted(text, anchor))
                 .font(.body)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .id(anchor)
     }
 
     private func keyPointRow(_ point: TimedKeyPoint) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        let anchor = SummaryAnchor.keyPoint(point.id)
+        return HStack(alignment: .top, spacing: 10) {
             Text("\u{2022}")
                 .foregroundStyle(.secondary)
                 .padding(.top, 1)
-            Text(point.text)
+            Text(highlighted(point.text, anchor))
                 .font(.body)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -347,6 +368,7 @@ struct SummaryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .id(anchor)
     }
 
     private func transcriptEditedAfterSummary(_ summary: Summary) -> Bool {

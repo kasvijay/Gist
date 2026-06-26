@@ -9,6 +9,7 @@ struct TranscriptView: View {
     var onDeleteOriginalAudio: (() -> Void)? = nil
     @Binding var jumpToTime: TimeInterval?
     var onEdit: ((Transcript) -> Void)? = nil
+    @ObservedObject var find: FindController
 
     init(transcript: Transcript,
          entry: SessionIndex.SessionEntry? = nil,
@@ -17,7 +18,8 @@ struct TranscriptView: View {
          hasOriginalAudio: Bool = false,
          onDeleteOriginalAudio: (() -> Void)? = nil,
          jumpToTime: Binding<TimeInterval?> = .constant(nil),
-         onEdit: ((Transcript) -> Void)? = nil) {
+         onEdit: ((Transcript) -> Void)? = nil,
+         find: FindController) {
         self.transcript = transcript
         self.entry = entry
         self.loadedSummary = loadedSummary
@@ -26,6 +28,7 @@ struct TranscriptView: View {
         self.onDeleteOriginalAudio = onDeleteOriginalAudio
         self._jumpToTime = jumpToTime
         self.onEdit = onEdit
+        self.find = find
     }
 
     @State private var confirmDeleteOriginal = false
@@ -86,6 +89,12 @@ struct TranscriptView: View {
             guard let target = newValue else { return }
             performJump(to: target, scrollProxy: proxy)
             jumpToTime = nil
+        }
+        .onChange(of: find.scrollNonce) {
+            guard let anchor = find.currentMatch?.anchor, let id = anchor.base as? UUID else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(id, anchor: .center)
+            }
         }
         }
     }
@@ -151,7 +160,11 @@ struct TranscriptView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .onSubmit { commitDraft() }
                     } else {
-                        Text(segment.text)
+                        Text(FindHighlighter.attributed(
+                            segment.text,
+                            query: find.query,
+                            currentOccurrence: find.currentOccurrence(forAnchor: segment.id)
+                        ))
                             .font(.body)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)

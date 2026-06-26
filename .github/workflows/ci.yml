@@ -1,0 +1,43 @@
+name: CI
+
+# Runs the test suite on every push and pull request so regressions are caught
+# before they reach a release tag. Mirrors the local pre-commit hook
+# (scripts/pre-commit) which runs the same tests before each commit.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -project Gist.xcodeproj \
+            -scheme Gist \
+            -resolvePackageDependencies
+
+      - name: Run tests
+        run: |
+          xcodebuild -project Gist.xcodeproj \
+            -scheme Gist \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            test
