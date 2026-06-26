@@ -848,7 +848,7 @@
 				CODE_SIGN_ENTITLEMENTS = Gist/Gist.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Gist/Info.plist;
@@ -858,7 +858,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.1;
+				MARKETING_VERSION = 0.3.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vijaykas.gist;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "Gist/Gist-Bridging-Header.h";
@@ -873,7 +873,7 @@
 				CODE_SIGN_ENTITLEMENTS = Gist/Gist.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Gist/Info.plist;
@@ -883,7 +883,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.1;
+				MARKETING_VERSION = 0.3.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vijaykas.gist;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "Gist/Gist-Bridging-Header.h";

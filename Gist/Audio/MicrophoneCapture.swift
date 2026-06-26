@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import CoreAudio
 import os
 
@@ -110,13 +111,32 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// Bind the engine's input to `preferredDeviceID` (the built-in mic) before the
     /// tap is installed. Best-effort: if the device is gone or the AU rejects it, we
     /// fall back to the system default rather than failing the recording.
+    ///
+    /// Uses the C `AudioUnitSetProperty` API rather than `auAudioUnit.setDeviceID`:
+    /// the latter can raise an *uncatchable* Objective-C NSException for some
+    /// device/state combinations (observed crashing on launch-to-record when the
+    /// default input is a Bluetooth headset), which a Swift `try`/`catch` cannot
+    /// stop. `AudioUnitSetProperty` returns an `OSStatus` and never raises, so a
+    /// rejected device just leaves us on the default input instead of crashing.
     private func bindPreferredDevice(_ inputNode: AVAudioInputNode) {
         guard let deviceID = preferredDeviceID else { return }
-        do {
-            try inputNode.auAudioUnit.setDeviceID(deviceID)
+        guard let audioUnit = inputNode.audioUnit else {
+            logger.warning("No audio unit on input node — cannot bind preferred device \(deviceID)")
+            return
+        }
+        var device = deviceID
+        let status = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &device,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        if status == noErr {
             logger.info("Bound mic capture to preferred device \(deviceID)")
-        } catch {
-            logger.warning("Could not bind preferred input device \(deviceID): \(error.localizedDescription) — using default")
+        } else {
+            logger.warning("Could not bind preferred input device \(deviceID): OSStatus \(status) — using default")
         }
     }
 
