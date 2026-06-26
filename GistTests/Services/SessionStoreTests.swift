@@ -7,15 +7,19 @@ final class SessionStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        store = SessionStore()
+        MainActor.assumeIsolated {
+            store = SessionStore()
+        }
     }
 
     override func tearDown() {
-        // Clean up any test sessions we created
-        if let session = store.currentSession {
-            store.deleteSession(id: session.id)
+        MainActor.assumeIsolated {
+            // Clean up any test sessions we created
+            if let session = store.currentSession {
+                store.deleteSession(id: session.id)
+            }
+            store = nil
         }
-        store = nil
         super.tearDown()
     }
 

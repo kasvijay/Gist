@@ -7,11 +7,15 @@ final class RecordingManagerTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        manager = RecordingManager()
+        MainActor.assumeIsolated {
+            manager = RecordingManager()
+        }
     }
 
     override func tearDown() {
-        manager = nil
+        MainActor.assumeIsolated {
+            manager = nil
+        }
         super.tearDown()
     }
 

@@ -12,12 +12,16 @@ final class SessionLifecycleTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        store = SessionStore()
+        MainActor.assumeIsolated {
+            store = SessionStore()
+        }
     }
 
     override func tearDown() {
-        if let id = sessionID { store.deleteSession(id: id) }
-        store = nil
+        MainActor.assumeIsolated {
+            if let id = sessionID { store.deleteSession(id: id) }
+            store = nil
+        }
         super.tearDown()
     }
 
