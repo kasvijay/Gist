@@ -5,14 +5,18 @@ import XCTest
 final class TranscriptionEngineTests: XCTestCase {
     private var engine: TranscriptionEngine!
 
-    override func setUp() async throws {
-        try await super.setUp()
-        engine = TranscriptionEngine()
+    override func setUp() {
+        super.setUp()
+        MainActor.assumeIsolated {
+            engine = TranscriptionEngine()
+        }
     }
 
-    override func tearDown() async throws {
-        engine = nil
-        try await super.tearDown()
+    override func tearDown() {
+        MainActor.assumeIsolated {
+            engine = nil
+        }
+        super.tearDown()
     }
 
     // MARK: - Initial State
