@@ -162,7 +162,8 @@ final class RecordingManager: ObservableObject {
                 }
 
                 self.systemAudioActive = self.pipeline.systemAudioActive
-                self.micDeviceName = self.pipeline.micDeviceName ?? "Unknown Microphone"
+                let captureInfo = self.pipeline.micCaptureInfo
+                self.micDeviceName = captureInfo?.deviceName ?? self.pipeline.micDeviceName ?? "Unknown Microphone"
                 self.isRecording = true
                 self.isStarting = false
                 self.recordingStart = Date()
@@ -172,6 +173,21 @@ final class RecordingManager: ObservableObject {
                 self.audioDeviceWarning = nil
                 self.startTimer()
                 self.scheduleRecordingReminders()
+
+                // Persist the device actually used, and warn if we had to bypass a
+                // Bluetooth mic (which would otherwise record narrowband call audio).
+                if let captureInfo {
+                    sessionStore.updateRecordingDevices(Session.Devices(
+                        microphone: captureInfo.deviceName,
+                        systemAudio: captureInfo.systemOutputName,
+                        microphoneTransport: captureInfo.transport,
+                        microphoneSampleRate: captureInfo.sampleRate,
+                        switchedFromBluetooth: captureInfo.switchedFromBluetooth
+                    ))
+                    if let bluetoothName = captureInfo.switchedFromBluetooth {
+                        self.audioDeviceWarning = "Using the built-in mic for clearer audio — \(bluetoothName) switches to low-quality call mode when its mic is recorded."
+                    }
+                }
 
                 self.logger.info("Recording started: \(session.id), systemAudio: \(self.systemAudioActive)")
 

@@ -19,6 +19,14 @@ struct Session: Codable, Identifiable {
     struct Devices: Codable {
         var microphone: String?
         var systemAudio: String?
+        /// Transport of the mic actually used ("Built-in", "Bluetooth", "USB", …).
+        var microphoneTransport: String?
+        /// Capture sample rate of the mic in Hz. Note: a Bluetooth device in call
+        /// mode reports 48000 here even though its true bandwidth is ~8 kHz.
+        var microphoneSampleRate: Double?
+        /// Name of a Bluetooth input Gist declined to record from (forcing the
+        /// built-in mic instead), or nil if no such override happened.
+        var switchedFromBluetooth: String?
     }
 
     var folderName: String { id }

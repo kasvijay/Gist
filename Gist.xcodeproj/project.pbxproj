@@ -92,6 +92,7 @@
 		E0B89E33618633CFEB2BC9E9 /* AudioFileWriterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1FE402002B81B27C7AFDACB /* AudioFileWriterTests.swift */; };
 		E0D4A162CC0EABD8D9D54BC6 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 15FB41E6876EA03F244AD690 /* FluidAudio */; };
 		E1252A71B3E983BC170DB779 /* AudioWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126DC9C126BF87259AC2A78F /* AudioWaveformView.swift */; };
+		E3C7CC1E42E2903287197230 /* AudioDeviceUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB62F4E71CDCBB86C9F4CF0C /* AudioDeviceUtils.swift */; };
 		E73085872CE84A90FB58310A /* Summary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900C7F62135FF82524B3863B /* Summary.swift */; };
 		E781B1244DC6FB61A74D3F38 /* MistralProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110A7978321B4497B5C27107 /* MistralProvider.swift */; };
 		EA8A842923BC0C4F785330A5 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = C4529E771FE6C877CACDF083 /* WhisperKit */; };
@@ -182,6 +183,7 @@
 		A3A9581E8FA15718EE2E56CD /* Normalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Normalizer.swift; sourceTree = "<group>"; };
 		A827A2DA0AAA1C828BEB1849 /* ProviderRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRegistry.swift; sourceTree = "<group>"; };
 		AB4002DA7026BB2B9DF9E107 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
+		AB62F4E71CDCBB86C9F4CF0C /* AudioDeviceUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDeviceUtils.swift; sourceTree = "<group>"; };
 		AD58723079768078C52A9BE2 /* AudioPlayerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerService.swift; sourceTree = "<group>"; };
 		AFAC1CEA6CF3FE69437E473C /* GistTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GistTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B151D1B40794A9BFC94FBFED /* ProviderMarkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderMarkView.swift; sourceTree = "<group>"; };
@@ -279,6 +281,7 @@
 			isa = PBXGroup;
 			children = (
 				5EB9E5A6A52CDD340B6B3E96 /* .gitkeep */,
+				AB62F4E71CDCBB86C9F4CF0C /* AudioDeviceUtils.swift */,
 				1DF11B530A32F3E7CC053374 /* AudioFileWriter.swift */,
 				A017FA2FE81453EEEC35F34E /* AudioMixer.swift */,
 				6D73D61802A1C9C4C903CBE0 /* AudioSharedState.swift */,
@@ -626,6 +629,7 @@
 				BB9C7C3728A3507D7E3BC750 /* Analytics.swift in Sources */,
 				DE2207DB3F05BA54D854D366 /* AnthropicProvider.swift in Sources */,
 				71C3C5E762F86E6545B7DC8E /* AssemblyAIProvider.swift in Sources */,
+				E3C7CC1E42E2903287197230 /* AudioDeviceUtils.swift in Sources */,
 				DAC81C8E153BBAFC0F8657B1 /* AudioFileWriter.swift in Sources */,
 				2BB056E44AD524CFAE9A61A2 /* AudioMixer.swift in Sources */,
 				F9E3508776610D6F98C61150 /* AudioPlayerService.swift in Sources */,
@@ -844,7 +848,7 @@
 				CODE_SIGN_ENTITLEMENTS = Gist/Gist.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Gist/Info.plist;
@@ -854,7 +858,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vijaykas.gist;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "Gist/Gist-Bridging-Header.h";
@@ -869,7 +873,7 @@
 				CODE_SIGN_ENTITLEMENTS = Gist/Gist.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Gist/Info.plist;
@@ -879,7 +883,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.3.0;
+				MARKETING_VERSION = 0.3.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.vijaykas.gist;
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "Gist/Gist-Bridging-Header.h";

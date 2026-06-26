@@ -13,6 +13,18 @@ final class MixBufferHolder: @unchecked Sendable {
     var buffer: AVAudioPCMBuffer?
 }
 
+/// Details of the input device actually used for a recording, surfaced to the UI
+/// (for the Bluetooth warning banner) and persisted to session metadata.
+struct MicCaptureInfo: Sendable {
+    var deviceName: String
+    var transport: String
+    var sampleRate: Double
+    /// Name of the Bluetooth device we declined to record from (forcing the built-in
+    /// mic instead), or nil if no override happened.
+    var switchedFromBluetooth: String?
+    var systemOutputName: String?
+}
+
 final class RecordingPipeline: @unchecked Sendable {
     private let mic = MicrophoneCapture()
     private let systemCapture = SystemAudioCapture()
@@ -22,6 +34,10 @@ final class RecordingPipeline: @unchecked Sendable {
     private let logger = Logger(subsystem: "com.vijaykas.gist", category: "RecordingPipeline")
 
     private(set) var systemAudioActive = false
+
+    /// Set during `start` once the input device has been chosen. Read by
+    /// RecordingManager to warn the user and persist device info to metadata.
+    private(set) var micCaptureInfo: MicCaptureInfo?
 
     /// Callback invoked when an audio device change is detected during recording.
     /// Parameter is true if mic auto-recovered, false if recovery failed.
@@ -85,6 +101,7 @@ final class RecordingPipeline: @unchecked Sendable {
     ) throws {
         state.reset()
         systemAudioActive = false
+        micCaptureInfo = nil
 
         // Start system audio
         do {
@@ -201,6 +218,20 @@ final class RecordingPipeline: @unchecked Sendable {
             }
         }
 
+        // Avoid recording through a Bluetooth mic. AirPods (and most BT headsets)
+        // drop to the narrowband HFP/SCO "call" profile the moment their mic opens,
+        // crushing the captured audio to ~8 kHz telephone quality. If the default
+        // input is Bluetooth and a built-in mic exists, record from the built-in mic
+        // instead and remember the device we declined so the UI can explain why.
+        let defaultInput = AudioDeviceUtils.defaultInput()
+        var switchedFromBluetooth: String?
+        if let defaultInput, defaultInput.isBluetooth,
+           let builtIn = AudioDeviceUtils.builtInInput() {
+            mic.preferredDeviceID = builtIn.id
+            switchedFromBluetooth = defaultInput.name
+            logger.info("Default input '\(defaultInput.name)' is Bluetooth — recording from built-in mic '\(builtIn.name)' instead")
+        }
+
         try mic.startWithHandler()
 
         // Wire mic recovery callback — when mic auto-recovers after device switch,
@@ -218,6 +249,17 @@ final class RecordingPipeline: @unchecked Sendable {
         guard let format = mic.inputFormat else {
             throw MicrophoneCapture.CaptureError.invalidFormat
         }
+
+        // Transport of the device actually used: built-in if we overrode a BT default,
+        // otherwise whatever the default input reported.
+        let usedTransport = switchedFromBluetooth != nil ? "Built-in" : (defaultInput?.transport ?? "Unknown")
+        micCaptureInfo = MicCaptureInfo(
+            deviceName: mic.inputDeviceName ?? "Unknown Microphone",
+            transport: usedTransport,
+            sampleRate: format.sampleRate,
+            switchedFromBluetooth: switchedFromBluetooth,
+            systemOutputName: AudioDeviceUtils.defaultOutput()?.name
+        )
 
         // Note: writer starts after mic because we need mic.inputFormat.
         // A few initial buffers may be dropped (writer.append checks _isWriting).

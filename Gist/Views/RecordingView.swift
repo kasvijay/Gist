@@ -61,6 +61,28 @@ struct RecordingView: View {
                 .frame(maxWidth: 380)
                 .padding(.top, 44)
 
+                // Audio device warning (e.g. Bluetooth mic bypassed for the built-in mic)
+                if let warning = recordingManager.audioDeviceWarning {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                        Text(warning)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: 380, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.yellow.opacity(0.12))
+                    )
+                    .padding(.top, 16)
+                    .transition(.opacity)
+                }
+
                 // Control buttons
                 HStack(spacing: 10) {
                     // Stop & summarize

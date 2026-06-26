@@ -196,6 +196,16 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Persist the input/output device actually used, once the pipeline has chosen
+    /// it. Replaces the placeholder written by `startSession`.
+    func updateRecordingDevices(_ devices: Session.Devices) {
+        guard var session = currentSession else { return }
+        session.devices = devices
+        writeMetadata(session)
+        updateIndex(session: session)
+        currentSession = session
+    }
+
     func finishSession(duration: TimeInterval) {
         guard var session = currentSession else { return }
         session.endedAt = Date()
