@@ -5,14 +5,14 @@ import XCTest
 final class SummarizationParsingTests: XCTestCase {
     private var engine: SummarizationEngine!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         engine = SummarizationEngine()
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         engine = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - formatTranscript (now lives on SummaryPromptBuilder; includes [mm:ss])
