@@ -225,10 +225,16 @@ final class RecordingPipeline: @unchecked Sendable {
         // instead and remember the device we declined so the UI can explain why.
         let defaultInput = AudioDeviceUtils.defaultInput()
         var switchedFromBluetooth: String?
+        // Friendly name of the logical input device to show in the UI. Note: the
+        // engine's bound device is an internal "CADefaultDeviceAggregate-…" that
+        // wraps the real default input, so we display the actual device's name here
+        // rather than reading it back off the engine's audio unit.
+        var chosenDeviceName = defaultInput?.name
         if let defaultInput, defaultInput.isBluetooth,
            let builtIn = AudioDeviceUtils.builtInInput() {
             mic.preferredDeviceID = builtIn.id
             switchedFromBluetooth = defaultInput.name
+            chosenDeviceName = builtIn.name
             logger.info("Default input '\(defaultInput.name)' is Bluetooth — recording from built-in mic '\(builtIn.name)' instead")
         }
 
@@ -254,7 +260,7 @@ final class RecordingPipeline: @unchecked Sendable {
         // otherwise whatever the default input reported.
         let usedTransport = switchedFromBluetooth != nil ? "Built-in" : (defaultInput?.transport ?? "Unknown")
         micCaptureInfo = MicCaptureInfo(
-            deviceName: mic.inputDeviceName ?? "Unknown Microphone",
+            deviceName: chosenDeviceName ?? mic.inputDeviceName ?? "Unknown Microphone",
             transport: usedTransport,
             sampleRate: format.sampleRate,
             switchedFromBluetooth: switchedFromBluetooth,

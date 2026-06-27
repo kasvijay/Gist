@@ -82,7 +82,9 @@ final class MicrophoneCapture: @unchecked Sendable {
             if started {
                 inputFormat = inputNode.outputFormat(forBus: 0)
                 isCapturing = true
-                inputDeviceName = AudioDeviceUtils.name(for: inputNode.auAudioUnit.deviceID)
+                // Friendly default-input name. Avoid reading the engine's bound
+                // device, which is an internal "CADefaultDeviceAggregate-…" wrapper.
+                inputDeviceName = AudioDeviceUtils.defaultInput()?.name
                     ?? AVCaptureDevice.default(for: .audio)?.localizedName
                 startConfigurationChangeMonitoring()
 
