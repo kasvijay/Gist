@@ -9,9 +9,13 @@ struct RecordingView: View {
     private let accentRedDark = Color(red: 190/255, green: 60/255, blue: 45/255)
 
     var body: some View {
-        VStack(spacing: 0) {
+        // GeometryReader + ScrollView so the centered content fills the available
+        // space when it fits and SCROLLS when it doesn't — instead of forcing the
+        // window taller than the screen (which pushed the Stop button off-screen).
+        GeometryReader { geo in
+        ScrollView {
             VStack(spacing: 0) {
-                Spacer()
+                Spacer(minLength: 0)
 
                 // Recording / Paused badge
                 HStack(spacing: 8) {
@@ -218,9 +222,11 @@ struct RecordingView: View {
                 .padding(.horizontal, 48)
                 .padding(.top, 48)
 
-                Spacer()
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: geo.size.height)
+        }
         }
     }
 

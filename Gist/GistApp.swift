@@ -57,7 +57,14 @@ struct GistApp: App {
                     .environmentObject(transcriptionEngine)
             }
         }
-        .defaultSize(width: 700, height: 500)
+        .defaultSize(width: 860, height: 720)
+        // Size the window to the content's *minimum* size, not its ideal. Without
+        // this, the WindowGroup's automatic resizability grows the window toward the
+        // `maxHeight: .infinity` ideal of the recording/centered views — stretching
+        // it taller than the screen and pushing the Stop button off-screen the moment
+        // recording starts. contentMinSize keeps the window at a sane size the user
+        // can still resize freely.
+        .windowResizability(.contentMinSize)
 
         MenuBarExtra {
             MenuBarView()
