@@ -172,7 +172,7 @@ final class RecordingManager: ObservableObject {
                 self.error = nil
                 self.audioDeviceWarning = nil
                 self.startTimer()
-                self.scheduleRecordingReminders()
+                Self.scheduleRecordingReminders()
 
                 // Persist the device actually used, and warn if we had to bypass a
                 // Bluetooth mic (which would otherwise record narrowband call audio).
@@ -650,11 +650,18 @@ final class RecordingManager: ObservableObject {
         Array(stride(from: reminderFirstMinute, through: reminderMaxMinute, by: reminderStepMinute))
     }
 
-    private func scheduleRecordingReminders() {
+    /// `nonisolated static` on purpose: `UNUserNotificationCenter` invokes its
+    /// `requestAuthorization` / `add` completion handlers on a background queue. If
+    /// this were a @MainActor instance method, those closures would inherit
+    /// @MainActor isolation and the Swift 6 runtime (macOS 15+/26) would *trap*
+    /// when they run off the main actor — crashing the app the instant recording
+    /// starts. Keeping it nonisolated and touching no @MainActor state avoids that.
+    nonisolated private static func scheduleRecordingReminders() {
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
-            for minute in Self.reminderMinuteMarks {
+            let logger = Logger(subsystem: "com.vijaykas.gist", category: "RecordingManager")
+            for minute in reminderMinuteMarks {
                 let content = UNMutableNotificationContent()
                 content.title = "Recording Still Active"
                 content.body = "Gist has been recording for \(minute) minutes. Open the app to stop when you're done."
@@ -665,13 +672,13 @@ final class RecordingManager: ObservableObject {
                     repeats: false
                 )
                 let request = UNNotificationRequest(
-                    identifier: "\(Self.reminderIDPrefix)\(minute)",
+                    identifier: "\(reminderIDPrefix)\(minute)",
                     content: content,
                     trigger: trigger
                 )
                 center.add(request) { error in
                     if let error {
-                        self.logger.error("Failed to schedule \(minute)-min reminder: \(error)")
+                        logger.error("Failed to schedule \(minute)-min reminder: \(error)")
                     }
                 }
             }
