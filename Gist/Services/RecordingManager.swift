@@ -113,7 +113,11 @@ final class RecordingManager: ObservableObject {
         }
         if permission == .undetermined {
             isStarting = false
-            AVAudioApplication.requestRecordPermission { [weak self] granted in
+            // @Sendable so this completion is NOT inferred @MainActor: TCC invokes it
+            // on a background thread, and a @MainActor closure run off the main actor
+            // traps under the Swift 6 runtime (crashes the signed/notarized build the
+            // first time mic permission is requested). The body hops to the main actor.
+            AVAudioApplication.requestRecordPermission { @Sendable [weak self] granted in
                 Task { @MainActor in
                     if granted {
                         self?.performStartRecording(sessionStore: sessionStore, transcriptionEngine: transcriptionEngine, diarizationManager: diarizationManager)
