@@ -149,7 +149,7 @@ final class RecordingManager: ObservableObject {
                                 self?.audioDeviceWarning = nil
                             }
                         } else {
-                            self?.audioDeviceWarning = "Audio device changed — reconnecting mic..."
+                            self?.audioDeviceWarning = "Microphone disconnected — still capturing system audio. Reconnect the mic, or stop when done."
                         }
                     }
                 }
@@ -174,18 +174,18 @@ final class RecordingManager: ObservableObject {
                 self.startTimer()
                 Self.scheduleRecordingReminders()
 
-                // Persist the device actually used, and warn if we had to bypass a
-                // Bluetooth mic (which would otherwise record narrowband call audio).
+                // Persist the device actually used, and warn if the mic is a Bluetooth
+                // device (AirPods etc.), which records at reduced call-mode quality.
                 if let captureInfo {
                     sessionStore.updateRecordingDevices(Session.Devices(
                         microphone: captureInfo.deviceName,
                         systemAudio: captureInfo.systemOutputName,
                         microphoneTransport: captureInfo.transport,
                         microphoneSampleRate: captureInfo.sampleRate,
-                        switchedFromBluetooth: captureInfo.switchedFromBluetooth
+                        bluetoothInput: captureInfo.bluetoothInputName
                     ))
-                    if let bluetoothName = captureInfo.switchedFromBluetooth {
-                        self.audioDeviceWarning = "Using the built-in mic for clearer audio — \(bluetoothName) switches to low-quality call mode when its mic is recorded."
+                    if let bluetoothName = captureInfo.bluetoothInputName {
+                        self.audioDeviceWarning = "\(bluetoothName) records at reduced quality (Bluetooth call mode). For best audio, use the built-in mic or wired headphones."
                     }
                 }
 

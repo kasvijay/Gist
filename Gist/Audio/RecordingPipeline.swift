@@ -19,9 +19,11 @@ struct MicCaptureInfo: Sendable {
     var deviceName: String
     var transport: String
     var sampleRate: Double
-    /// Name of the Bluetooth device we declined to record from (forcing the built-in
-    /// mic instead), or nil if no override happened.
-    var switchedFromBluetooth: String?
+    /// Name of the input device when it's a Bluetooth headset (AirPods etc.), which
+    /// records at reduced "call mode" quality. nil when the input isn't Bluetooth.
+    /// Drives a UI warning — we do NOT force a different device (that destabilizes
+    /// the audio engine; see RecordingPipeline.start).
+    var bluetoothInputName: String?
     var systemOutputName: String?
 }
 
@@ -69,6 +71,17 @@ final class RecordingPipeline: @unchecked Sendable {
     private var _levelCallbackCount = 0
     private var _lastSystemRMS: Float = 0
     private var _lastSystemAppendNanos: UInt64 = 0
+    private var _lastMicBufferNanos: UInt64 = 0
+
+    // Keep-alive writer. The file writer is driven by the mic callback, so if the
+    // mic stops delivering buffers (device change / disconnect that fails to
+    // recover) the whole recording would silently stop. This timer keeps the
+    // recording advancing — writing the live system audio (or silence) — whenever
+    // the mic has gone quiet, so we never lose the meeting just because the mic blipped.
+    private let keepAliveQueue = DispatchQueue(label: "com.vijaykas.gist.recordKeepAlive")
+    private var keepAliveTimer: DispatchSourceTimer?
+    private var captureFormat: AVAudioFormat?
+    private static let micStaleThresholdNanos: UInt64 = 500_000_000  // 0.5s without a mic buffer = mic down
 
     func setPaused(_ paused: Bool) {
         controlLock.lock()
@@ -102,6 +115,10 @@ final class RecordingPipeline: @unchecked Sendable {
         state.reset()
         systemAudioActive = false
         micCaptureInfo = nil
+        captureFormat = nil
+        controlLock.lock()
+        _lastMicBufferNanos = 0
+        controlLock.unlock()
 
         // Start system audio
         do {
@@ -152,6 +169,9 @@ final class RecordingPipeline: @unchecked Sendable {
         mic.bufferHandler = { [weak self] buffer in
             // Check pause/mute state
             capturedControlLock.lock()
+            // Mark the mic alive on every buffer so the keep-alive timer can tell
+            // "mic is delivering" from "mic stopped".
+            self?._lastMicBufferNanos = DispatchTime.now().uptimeNanoseconds
             let paused = self?._isPaused ?? false
             let micMuted = self?._isMicMuted ?? false
             self?._levelCallbackCount = (self?._levelCallbackCount ?? 0) + 1
@@ -218,24 +238,20 @@ final class RecordingPipeline: @unchecked Sendable {
             }
         }
 
-        // Avoid recording through a Bluetooth mic. AirPods (and most BT headsets)
-        // drop to the narrowband HFP/SCO "call" profile the moment their mic opens,
-        // crushing the captured audio to ~8 kHz telephone quality. If the default
-        // input is Bluetooth and a built-in mic exists, record from the built-in mic
-        // instead and remember the device we declined so the UI can explain why.
+        // Record from whatever the user's default input is — do NOT try to force a
+        // different device. Forcing the engine's input to the built-in mic while a
+        // Bluetooth device is the default I/O fails (AudioUnit -10851) and leaves the
+        // engine in a state where it can't initialize (-10875), so recording fails
+        // entirely. AirPods (and most BT headsets) record at narrowband "call mode"
+        // quality, which we can't avoid here — so we just surface a warning instead.
         let defaultInput = AudioDeviceUtils.defaultInput()
-        var switchedFromBluetooth: String?
-        // Friendly name of the logical input device to show in the UI. Note: the
-        // engine's bound device is an internal "CADefaultDeviceAggregate-…" that
-        // wraps the real default input, so we display the actual device's name here
-        // rather than reading it back off the engine's audio unit.
-        var chosenDeviceName = defaultInput?.name
-        if let defaultInput, defaultInput.isBluetooth,
-           let builtIn = AudioDeviceUtils.builtInInput() {
-            mic.preferredDeviceID = builtIn.id
-            switchedFromBluetooth = defaultInput.name
-            chosenDeviceName = builtIn.name
-            logger.info("Default input '\(defaultInput.name)' is Bluetooth — recording from built-in mic '\(builtIn.name)' instead")
+        let bluetoothInputName: String? = (defaultInput?.isBluetooth == true) ? defaultInput?.name : nil
+        // Friendly name of the logical input device for the UI. The engine's bound
+        // device is an internal "CADefaultDeviceAggregate-…" that wraps the real
+        // default input, so we display the actual device's name instead.
+        let chosenDeviceName = defaultInput?.name
+        if let bluetoothInputName {
+            logger.info("Default input '\(bluetoothInputName)' is Bluetooth — recording at reduced call-mode quality")
         }
 
         try mic.startWithHandler()
@@ -256,14 +272,12 @@ final class RecordingPipeline: @unchecked Sendable {
             throw MicrophoneCapture.CaptureError.invalidFormat
         }
 
-        // Transport of the device actually used: built-in if we overrode a BT default,
-        // otherwise whatever the default input reported.
-        let usedTransport = switchedFromBluetooth != nil ? "Built-in" : (defaultInput?.transport ?? "Unknown")
+        captureFormat = format
         micCaptureInfo = MicCaptureInfo(
             deviceName: chosenDeviceName ?? mic.inputDeviceName ?? "Unknown Microphone",
-            transport: usedTransport,
+            transport: defaultInput?.transport ?? "Unknown",
             sampleRate: format.sampleRate,
-            switchedFromBluetooth: switchedFromBluetooth,
+            bluetoothInputName: bluetoothInputName,
             systemOutputName: AudioDeviceUtils.defaultOutput()?.name
         )
 
@@ -280,6 +294,7 @@ final class RecordingPipeline: @unchecked Sendable {
         startDeviceChangeMonitoring()
         if systemAudioActive {
             startSystemWatchdog()
+            startKeepAlive()
         }
 
         logger.info("Recording pipeline started, systemAudio: \(self.systemAudioActive)")
@@ -288,6 +303,7 @@ final class RecordingPipeline: @unchecked Sendable {
     func stop() {
         stopDeviceChangeMonitoring()
         stopSystemWatchdog()
+        stopKeepAlive()
         // Gate restarts off, cancel any pending one, then drain the restart
         // queue so an in-flight rebuild can't race systemCapture.stop().
         systemAudioActive = false
@@ -302,13 +318,73 @@ final class RecordingPipeline: @unchecked Sendable {
         state.reset()
         onDeviceChanged = nil
         onAudioLevels = nil
+        captureFormat = nil
         controlLock.lock()
         _isPaused = false
         _isMicMuted = false
         _levelCallbackCount = 0
         _lastSystemRMS = 0
         _lastSystemAppendNanos = 0
+        _lastMicBufferNanos = 0
         controlLock.unlock()
+    }
+
+    // MARK: - Keep-Alive Writer (mic-drop resilience)
+
+    /// Periodically (10 Hz) check whether the mic is still delivering buffers. While
+    /// it is, the mic callback drives the writer and this does nothing. When the mic
+    /// goes quiet (device change / disconnect), keep the recording advancing by
+    /// writing the live system audio (or brief silence) so we don't lose the meeting
+    /// and the file stays time-aligned with the elapsed timer.
+    private func startKeepAlive() {
+        let timer = DispatchSource.makeTimerSource(queue: keepAliveQueue)
+        timer.schedule(deadline: .now() + 0.1, repeating: 0.1)
+        timer.setEventHandler { [weak self] in
+            self?.keepAliveTick()
+        }
+        keepAliveTimer = timer
+        timer.resume()
+    }
+
+    private func stopKeepAlive() {
+        keepAliveTimer?.cancel()
+        keepAliveTimer = nil
+    }
+
+    private func keepAliveTick() {
+        guard systemAudioActive, let fmt = captureFormat, writer.isWriting else { return }
+        controlLock.lock()
+        let paused = _isPaused
+        let lastMic = _lastMicBufferNanos
+        controlLock.unlock()
+        if paused { return }
+
+        // Only act once the mic has actually started and then gone quiet. While the
+        // mic is delivering buffers it drives the writer itself.
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard lastMic != 0, now > lastMic, now - lastMic > Self.micStaleThresholdNanos else { return }
+
+        // Drain whatever system audio has accumulated and write it (system-only), so
+        // the meeting keeps recording while the mic is down. Fall back to a short
+        // silence to keep the timeline moving if system audio is also quiet.
+        let maxFrames = Int(fmt.sampleRate * 0.5)
+        let samples = state.consumeSystemSamples(count: maxFrames)
+        let frames = samples.isEmpty ? Int(fmt.sampleRate * 0.1) : samples.count
+        guard frames > 0,
+              let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(frames)) else { return }
+        buf.frameLength = AVAudioFrameCount(frames)
+        guard let ch = buf.floatChannelData else { return }
+        let channelCount = Int(fmt.channelCount)
+        let byteCount = frames * MemoryLayout<Float>.size
+        if samples.isEmpty {
+            for c in 0..<channelCount { memset(ch[c], 0, byteCount) }
+        } else {
+            samples.withUnsafeBufferPointer { sp in
+                if let base = sp.baseAddress { memcpy(ch[0], base, byteCount) }
+            }
+            for c in 1..<channelCount { memcpy(ch[c], ch[0], byteCount) }
+        }
+        writer.append(buffer: buf)
     }
 
     // MARK: - Silent Buffer Helper

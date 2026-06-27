@@ -1,5 +1,4 @@
 import AVFoundation
-import AudioToolbox
 import CoreAudio
 import os
 
@@ -10,12 +9,6 @@ final class MicrophoneCapture: @unchecked Sendable {
     private(set) var isCapturing = false
     private(set) var inputFormat: AVAudioFormat?
     private(set) var inputDeviceName: String?
-
-    /// When set, the capture engine is bound to this specific input device instead
-    /// of the system default. Gist uses this to force recording through the built-in
-    /// mic when the default input is a Bluetooth device in narrowband call mode.
-    /// Set before `start` / `startWithHandler`.
-    var preferredDeviceID: AudioDeviceID?
 
     /// Stored handler for use with RecordingPipeline
     var bufferHandler: (@Sendable (AVAudioPCMBuffer) -> Void)?
@@ -51,7 +44,6 @@ final class MicrophoneCapture: @unchecked Sendable {
             // Touch mainMixerNode to force proper audio graph initialization.
             _ = engine.mainMixerNode
             let inputNode = engine.inputNode
-            bindPreferredDevice(inputNode)
             let nodeFormat = inputNode.outputFormat(forBus: 0)
 
             // Validate the node's bus format BEFORE attempting the tap. A
@@ -110,38 +102,6 @@ final class MicrophoneCapture: @unchecked Sendable {
         logger.info("Microphone capture stopped")
     }
 
-    /// Bind the engine's input to `preferredDeviceID` (the built-in mic) before the
-    /// tap is installed. Best-effort: if the device is gone or the AU rejects it, we
-    /// fall back to the system default rather than failing the recording.
-    ///
-    /// Uses the C `AudioUnitSetProperty` API rather than `auAudioUnit.setDeviceID`:
-    /// the latter can raise an *uncatchable* Objective-C NSException for some
-    /// device/state combinations (observed crashing on launch-to-record when the
-    /// default input is a Bluetooth headset), which a Swift `try`/`catch` cannot
-    /// stop. `AudioUnitSetProperty` returns an `OSStatus` and never raises, so a
-    /// rejected device just leaves us on the default input instead of crashing.
-    private func bindPreferredDevice(_ inputNode: AVAudioInputNode) {
-        guard let deviceID = preferredDeviceID else { return }
-        guard let audioUnit = inputNode.audioUnit else {
-            logger.warning("No audio unit on input node — cannot bind preferred device \(deviceID)")
-            return
-        }
-        var device = deviceID
-        let status = AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &device,
-            UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
-        if status == noErr {
-            logger.info("Bound mic capture to preferred device \(deviceID)")
-        } else {
-            logger.warning("Could not bind preferred input device \(deviceID): OSStatus \(status) — using default")
-        }
-    }
-
     // MARK: - Device Change Recovery
 
     private func startConfigurationChangeMonitoring() {
@@ -178,7 +138,6 @@ final class MicrophoneCapture: @unchecked Sendable {
             engine = AVAudioEngine()
             _ = engine.mainMixerNode
             let inputNode = engine.inputNode
-            bindPreferredDevice(inputNode)
             let nodeFormat = inputNode.outputFormat(forBus: 0)
 
             // Node format may briefly be 0/0 during a device hot-swap. Sleep

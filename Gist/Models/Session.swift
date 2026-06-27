@@ -24,9 +24,9 @@ struct Session: Codable, Identifiable {
         /// Capture sample rate of the mic in Hz. Note: a Bluetooth device in call
         /// mode reports 48000 here even though its true bandwidth is ~8 kHz.
         var microphoneSampleRate: Double?
-        /// Name of a Bluetooth input Gist declined to record from (forcing the
-        /// built-in mic instead), or nil if no such override happened.
-        var switchedFromBluetooth: String?
+        /// Name of the input when it's a Bluetooth device (AirPods etc.), which records
+        /// at reduced call-mode quality. nil when the input isn't Bluetooth.
+        var bluetoothInput: String?
     }
 
     var folderName: String { id }
