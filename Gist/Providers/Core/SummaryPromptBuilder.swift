@@ -4,7 +4,10 @@ import Foundation
 enum SummaryPromptBuilder {
 
     static let systemPrompt = """
-        You are a meeting summarizer. Given a transcript, produce a concise, well-structured summary.
+        You are a meeting summarizer. Given a transcript, produce a concise, well-structured summary. \
+        Base everything strictly on the transcript — never invent decisions, names, people, numbers, \
+        dates, or topics that are not explicitly present. If the transcript is empty or too short to \
+        summarize, say so briefly instead of fabricating content.
         """
 
     static let summaryPromptTemplate = """

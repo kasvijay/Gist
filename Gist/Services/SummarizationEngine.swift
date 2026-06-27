@@ -274,6 +274,27 @@ final class SummarizationEngine: ObservableObject {
     /// Summarize a transcript. Optionally pass the transcription engine to unload WhisperKit
     /// during summarization to free memory (important on 8GB machines).
     func summarize(transcript: Transcript, transcriptionEngine: TranscriptionEngine? = nil) async -> Summary? {
+        // Guard against hallucination on near-empty transcripts. A small on-device
+        // model asked to "summarize this meeting" with almost no content invents a
+        // whole fake meeting (decisions, names, budgets). Below a minimum amount of
+        // speech there is nothing to summarize, so return an honest minimal summary
+        // instead of invoking the LLM.
+        let transcriptText = transcript.segments.map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let wordCount = transcriptText.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" }).count
+        if wordCount < 25 {
+            let overview = transcriptText.isEmpty
+                ? "This recording was too short to summarize — no speech was captured."
+                : "This recording was too short to summarize. What was captured: \u{201C}\(transcriptText)\u{201D}"
+            let summary = Summary(created: Date(), model: modelName, content: overview,
+                                  overview: overview, decisions: nil, actionItems: nil, keyPoints: nil)
+            currentSummary = summary
+            state = .complete
+            logger.info("Skipped LLM summarization — transcript too short (\(wordCount) words)")
+            return summary
+        }
+
         // Unload WhisperKit to free memory for the LLM on machines with ≤ 8GB RAM
         let totalMemoryGB = ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024)
         let shouldUnload = totalMemoryGB <= 8 && (transcriptionEngine?.isModelLoaded ?? false)
@@ -330,7 +351,7 @@ final class SummarizationEngine: ObservableObject {
 
         do {
             let userInput = UserInput(chat: [
-                .system("You are a concise meeting summarizer. Output only the requested sections in clean markdown. Do not repeat yourself. Do not add follow-up questions, offers to elaborate, or any text outside the requested sections. Stop immediately after the last bullet point."),
+                .system("You are a concise meeting summarizer. Summarize ONLY what is explicitly in the transcript — never invent decisions, names, people, numbers, dates, budgets, or topics that are not present. If the transcript is empty or too short to summarize, output only a one-line Overview saying so and omit the other sections. Output only the requested sections in clean markdown. Do not repeat yourself. Do not add follow-up questions, offers to elaborate, or any text outside the requested sections. Stop immediately after the last bullet point."),
                 .user(prompt),
             ])
             let lmInput = try await container.prepare(input: userInput)
